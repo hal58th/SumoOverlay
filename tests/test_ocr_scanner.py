@@ -2,6 +2,8 @@ import logging
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from ocr_scanner import OCRScanner
 
 
@@ -57,6 +59,45 @@ def test_scanner_resets_stability_when_names_change_or_disappear():
     assert scanner.status()["state"] == "confirming"
 
 
+@pytest.mark.parametrize(
+    ("detections", "expected"),
+    [
+        ((("大喜翔", 0.8), ("読めない", 0.2)), ("大喜翔", "")),
+        ((("読めない", 0.2), ("栃幸大", 0.8)), ("", "栃幸大")),
+    ],
+)
+def test_scanner_accepts_either_name_when_only_one_side_meets_confidence(
+    monkeypatch, detections, expected
+):
+    emitted = []
+    settings = {
+        "control": {"mode": "automated"},
+        "ocr": {
+            "enabled": True,
+            "stable_readings": 1,
+            "minimum_confidence": 0.5,
+            "interval_seconds": 0.01,
+        },
+    }
+
+    def on_match(left, right):
+        emitted.append((left, right))
+        scanner._stop.set()
+        return {"index": 4}
+
+    scanner = OCRScanner(lambda: settings, on_match, logging.getLogger("test-ocr"))
+    monkeypatch.setattr(
+        scanner,
+        "_capture_and_read",
+        lambda current_settings: detections,
+    )
+    scanner._run()
+
+    assert emitted == [expected]
+    assert scanner.status()["state"] == "matched"
+    assert scanner.status()["matchedBout"]["index"] == 4
+
+
 def test_scanner_reports_unmatched_names_and_callback_errors(caplog):
     logger = logging.getLogger("test-ocr-errors")
     unmatched = OCRScanner(lambda: {}, lambda left, right: None, logger)
@@ -98,3 +139,12 @@ def test_reader_is_cpu_only_and_limits_torch_threads(monkeypatch):
     assert scanner._load_reader() is expected_reader
     assert reader_options == {"languages": ["ja"], "gpu": False, "verbose": False}
     assert thread_limits == [2]
+
+
+def test_wsl_screen_capture_reports_windows_desktop_limitation(monkeypatch):
+    monkeypatch.setattr("ocr_scanner.sys.platform", "linux")
+    monkeypatch.setenv("WSL_DISTRO_NAME", "AlmaLinux")
+    scanner = OCRScanner(lambda: {}, lambda left, right: None, logging.getLogger("test-ocr"))
+
+    with pytest.raises(RuntimeError, match="cannot read the Windows desktop from WSL"):
+        scanner._capture_and_read({})

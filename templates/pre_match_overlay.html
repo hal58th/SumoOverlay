@@ -48,6 +48,24 @@
     let lastBoutKey = null;
     let lastTimerKey = null;
     let lastPinned = null;
+    const MIN_NAME_FONT_SIZE = 10;
+
+    function fitNameToWidth(element) {
+      element.style.fontSize = "";
+      let fontSize = Number.parseFloat(window.getComputedStyle(element).fontSize);
+      if (!Number.isFinite(fontSize) || element.clientWidth <= 0) return;
+
+      while (fontSize > MIN_NAME_FONT_SIZE && element.scrollWidth > element.clientWidth) {
+        fontSize = Math.max(MIN_NAME_FONT_SIZE, fontSize - 1);
+        element.style.fontSize = `${fontSize}px`;
+      }
+    }
+
+    function fitWrestlerNames() {
+      document.querySelectorAll(".wrestler-name").forEach(fitNameToWidth);
+    }
+
+    window.addEventListener("resize", fitWrestlerNames);
 
     function placeOverlay(bounds, canvas) {
       preMatchOverlay.style.left = `${bounds.x / canvas.width * 100}%`;
@@ -59,11 +77,33 @@
     function updateOverlayPosition(state) {
       if (state.settings && state.settings.overlay) {
         placeOverlay(state.settings.overlay.pre_match, state.settings.overlay.canvas);
+        if (!preMatchOverlay.hidden) fitWrestlerNames();
       }
     }
 
     function recordText(record) {
       return record ? `${record.wins}-${record.losses}` : "Record unavailable";
+    }
+
+    function renderBoutRecord(side, record, emphasized) {
+      const container = document.getElementById(`${side}-record`);
+      const value = document.createElement(emphasized ? "strong" : "span");
+      value.textContent = recordText(record);
+      container.replaceChildren(value);
+    }
+
+    function monthsBetweenBashos(start, end) {
+      if (
+        typeof start !== "string" || !/^\d{6}$/.test(start) ||
+        typeof end !== "string" || !/^\d{6}$/.test(end)
+      ) return null;
+      const startMonth = Number(start.slice(4, 6));
+      const endMonth = Number(end.slice(4, 6));
+      if (startMonth < 1 || startMonth > 12 || endMonth < 1 || endMonth > 12) return null;
+      const months =
+        (Number(end.slice(0, 4)) - Number(start.slice(0, 4))) * 12 +
+        endMonth - startMonth;
+      return months >= 0 ? months : null;
     }
 
     function ageFromBirthDate(birthDate) {
@@ -101,31 +141,66 @@
       return `Weight: ${weightKg} kg (${pounds} lb)`;
     }
 
-    function renderWrestlerProfile(side, profile) {
-      const lines = [];
-      const age = profile && ageFromBirthDate(profile.birthDate);
-      if (age) {
-        lines.push(`Age: ${age.years} years, ${age.months} months`);
-      }
-      if (profile) {
-        const height = heightText(profile.height);
-        const weight = weightText(profile.weight);
-        if (height) lines.push(height);
-        if (weight) lines.push(weight);
-        if (typeof profile.heya === "string" && profile.heya) {
-          lines.push(`Stable (heya): ${profile.heya}`);
-        }
-        if (typeof profile.shusshin === "string" && profile.shusshin) {
-          lines.push(`Place of origin (shusshin): ${profile.shusshin}`);
-        }
-      }
+    function renderWrestlerProfile(side, profile, state, comparisons) {
+      const content = profile || {};
       const container = document.getElementById(`${side}-profile`);
-      container.replaceChildren(...lines.map(text => {
+      const lines = [];
+      const line = (label, value, emphasized = false) => {
         const line = document.createElement("div");
         line.className = "wrestler-profile-line";
-        line.textContent = text;
-        return line;
-      }));
+        line.append(document.createTextNode(`${label}: `));
+        const valueNode = emphasized
+          ? document.createElement("strong")
+          : document.createElement("span");
+        valueNode.textContent = value;
+        line.append(valueNode);
+        lines.push(line);
+      };
+      const age = ageFromBirthDate(content.birthDate);
+      const lifetime = content.lifetime;
+      if (lifetime && typeof lifetime.matches === "number") {
+        const lifetimeLine = document.createElement("div");
+        lifetimeLine.className = "wrestler-profile-line";
+        lifetimeLine.append(document.createTextNode("Career: "));
+        const score = document.createElement(
+          comparisons.lifetimeScore[side] ? "strong" : "span"
+        );
+        score.textContent = `${lifetime.wins}-${lifetime.losses}`;
+        lifetimeLine.append(score, document.createTextNode(" ("));
+        const percentage = document.createElement(
+          comparisons.lifetimeScore[side] ? "strong" : "span"
+        );
+        percentage.textContent = lifetime.matches > 0
+          ? `${(lifetime.wins / lifetime.matches * 100).toFixed(1)}%`
+          : "N/A";
+        lifetimeLine.append(percentage, document.createTextNode(", "));
+        const matchCount = document.createElement(
+          comparisons.lifetimeMatches[side] ? "strong" : "span"
+        );
+        matchCount.textContent = String(lifetime.matches);
+        lifetimeLine.append(matchCount, document.createTextNode(" matches)"));
+        lines.push(lifetimeLine);
+      }
+      const wrestlingMonths = monthsBetweenBashos(content.debut, state.settings.bashoId);
+      if (wrestlingMonths !== null) {
+        line(
+          "Wrestling",
+          `${Math.floor(wrestlingMonths / 12)} years, ${wrestlingMonths % 12} months`,
+          comparisons.tenure[side]
+        );
+      }
+      if (age) line("Age", `${age.years} years, ${age.months} months`);
+      const height = heightText(content.height);
+      if (height) line("Height", height.replace(/^Height: /, ""), comparisons.height[side]);
+      const weight = weightText(content.weight);
+      if (weight) line("Weight", weight.replace(/^Weight: /, ""), comparisons.weight[side]);
+      if (typeof content.heya === "string" && content.heya) {
+        line("Stable (heya)", content.heya);
+      }
+      if (typeof content.shusshin === "string" && content.shusshin) {
+        line("Place of origin (shusshin)", content.shusshin);
+      }
+      container.replaceChildren(...lines);
     }
 
     function renderBout(state, suppressAutoShow = false) {
@@ -148,11 +223,58 @@
       document.getElementById("west-name").textContent = state.west.name;
       document.getElementById("east-rank").textContent = state.east.rank || "Rank unavailable";
       document.getElementById("west-rank").textContent = state.west.rank || "Rank unavailable";
-      document.getElementById("east-record").textContent = recordText(state.east.record);
-      document.getElementById("west-record").textContent = recordText(state.west.record);
+      const eastBoutScore = state.east.record &&
+        state.east.record.wins + state.east.record.losses > 0
+        ? state.east.record.wins / (state.east.record.wins + state.east.record.losses)
+        : null;
+      const westBoutScore = state.west.record &&
+        state.west.record.wins + state.west.record.losses > 0
+        ? state.west.record.wins / (state.west.record.wins + state.west.record.losses)
+        : null;
+      const boutScoreComparison = {
+        east: eastBoutScore !== null && westBoutScore !== null && eastBoutScore > westBoutScore,
+        west: eastBoutScore !== null && westBoutScore !== null && westBoutScore > eastBoutScore
+      };
+      renderBoutRecord("east", state.east.record, boutScoreComparison.east);
+      renderBoutRecord("west", state.west.record, boutScoreComparison.west);
       const profiles = state.wrestlerProfiles || {};
-      renderWrestlerProfile("east", profiles.east);
-      renderWrestlerProfile("west", profiles.west);
+      const eastProfile = profiles.east || {};
+      const westProfile = profiles.west || {};
+      const eastLifetime = eastProfile.lifetime;
+      const westLifetime = westProfile.lifetime;
+      const hasLifetime = profile =>
+        profile && typeof profile.matches === "number" && profile.matches > 0;
+      const eastScore = hasLifetime(eastLifetime)
+        ? eastLifetime.wins / eastLifetime.matches
+        : null;
+      const westScore = hasLifetime(westLifetime)
+        ? westLifetime.wins / westLifetime.matches
+        : null;
+      const compare = (eastValue, westValue) => ({
+        east:
+          typeof eastValue === "number" &&
+          typeof westValue === "number" &&
+          eastValue > westValue,
+        west:
+          typeof eastValue === "number" &&
+          typeof westValue === "number" &&
+          westValue > eastValue,
+      });
+      const comparisons = {
+        lifetimeScore: compare(eastScore, westScore),
+        lifetimeMatches: compare(
+          eastLifetime && eastLifetime.matches,
+          westLifetime && westLifetime.matches
+        ),
+        tenure: compare(
+          monthsBetweenBashos(eastProfile.debut, state.settings.bashoId),
+          monthsBetweenBashos(westProfile.debut, state.settings.bashoId)
+        ),
+        height: compare(eastProfile.height, westProfile.height),
+        weight: compare(eastProfile.weight, westProfile.weight),
+      };
+      renderWrestlerProfile("east", eastProfile, state, comparisons);
+      renderWrestlerProfile("west", westProfile, state, comparisons);
 
       const h2h = state.headToHead;
       const h2hScore = document.getElementById("head-to-head-score");
@@ -175,6 +297,8 @@
       overlayError.textContent = "";
       if (hideTimer !== null) window.clearTimeout(hideTimer);
       hideTimer = null;
+      preMatchOverlay.hidden = false;
+      fitWrestlerNames();
       if (state.settings.preMatchPinned) {
         preMatchOverlay.hidden = false;
         return;

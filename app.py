@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
+from jinja2 import ChoiceLoader, FileSystemLoader
 
 from bout_state import BoutController
 from config import DIVISION_NAMES, SettingsError, SettingsWatcher, load_settings
@@ -29,13 +30,33 @@ def create_app(
     watch_config: bool = True,
     schedule_factory: Callable[[dict[str, Any]], Any] | None = None,
     enable_ocr: bool = False,
+    override_config_path: str | Path | None = None,
 ) -> Flask:
     app = Flask(__name__)
     if test_config:
         app.config.update(test_config)
 
     settings_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
-    settings = load_settings(settings_path)
+    override_path = Path(override_config_path) if override_config_path else None
+    settings = load_settings(settings_path, override_path)
+    custom_templates_path = settings_path.parent / "custom_templates"
+    built_in_templates_path = Path(__file__).parent / "templates"
+    app.jinja_loader = ChoiceLoader(
+        [FileSystemLoader(custom_templates_path), app.jinja_loader]
+    )
+
+    def validate_overlay_templates(new_settings: dict[str, Any]) -> None:
+        for overlay_name, filename in new_settings["templates"].items():
+            if not any(
+                (directory / filename).is_file()
+                for directory in (custom_templates_path, built_in_templates_path)
+            ):
+                raise SettingsError(
+                    f"Template {filename!r} for {overlay_name} was not found in "
+                    f"{custom_templates_path} or {built_in_templates_path}"
+                )
+
+    validate_overlay_templates(settings)
 
     def build_schedule(new_settings: dict[str, Any]) -> BashoSchedule:
         if schedule_factory is not None:
@@ -64,6 +85,7 @@ def create_app(
     app.extensions["sumo_schedule"] = schedule
     app.extensions["socketio"] = socketio
     app.extensions["settings_path"] = settings_path
+    app.extensions["override_settings_path"] = override_path
     settings_lock = RLock()
     active_settings = settings
     watcher: SettingsWatcher | None = None
@@ -102,6 +124,7 @@ def create_app(
 
     def reload_settings(new_settings: dict[str, Any]) -> None:
         nonlocal active_settings
+        validate_overlay_templates(new_settings)
         with settings_lock:
             previous = active_settings
 
@@ -161,6 +184,7 @@ def create_app(
             settings["server"]["watch_interval_seconds"],
             reload_settings,
             app.logger,
+            override_path=override_path,
         )
 
     app.extensions["sumo_schedule"] = schedule
@@ -169,11 +193,11 @@ def create_app(
     @app.get("/overlay")
     @app.get("/pre-match-overlay")
     def pre_match_overlay() -> str:
-        return render_template("pre_match_overlay.html")
+        return render_template(current_settings()["templates"]["pre_match"])
 
     @app.get("/main-overlay")
     def main_overlay() -> str:
-        return render_template("main_overlay.html")
+        return render_template(current_settings()["templates"]["main"])
 
     @app.get("/control")
     def control() -> str:
@@ -391,10 +415,19 @@ def main() -> None:
         default=DEFAULT_CONFIG_PATH,
         help=f"Path to the JSON settings file (default: {DEFAULT_CONFIG_PATH})",
     )
+    parser.add_argument(
+        "--override-config",
+        type=Path,
+        help="Path to a partial JSON settings file applied over --config",
+    )
     arguments = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
-    app = create_app(config_path=arguments.config, enable_ocr=True)
+    app = create_app(
+        config_path=arguments.config,
+        enable_ocr=True,
+        override_config_path=arguments.override_config,
+    )
     watcher: SettingsWatcher = app.extensions["settings_watcher"]
     settings = watcher.snapshot()
     socketio: SocketIO = app.extensions["socketio"]

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import sys
 from threading import Event, RLock, Thread
 from typing import Any, Callable
 
@@ -78,7 +80,7 @@ class OCRScanner:
     ) -> dict[str, Any] | None:
         self._reset_detection_if_requested()
         pair = (self.normalize_text(left), self.normalize_text(right))
-        if not all(pair):
+        if not any(pair):
             self._candidate = None
             self._candidate_count = 0
             self._set_status(
@@ -160,6 +162,15 @@ class OCRScanner:
     def _capture_and_read(
         self, settings: dict[str, Any]
     ) -> tuple[tuple[str, float], tuple[str, float]]:
+        if sys.platform.startswith("linux") and (
+            os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP")
+        ):
+            raise RuntimeError(
+                "OCR screen capture cannot read the Windows desktop from WSL. "
+                "Run app.py with Windows Python to use OCR, or set ocr.enabled "
+                "to false in config.json to use the WSL server with manual controls."
+            )
+
         try:
             import mss
             import numpy as np
@@ -245,7 +256,7 @@ class OCRScanner:
                 left, right = self._capture_and_read(settings)
                 if (
                     left[1] < ocr_settings["minimum_confidence"]
-                    or right[1] < ocr_settings["minimum_confidence"]
+                    and right[1] < ocr_settings["minimum_confidence"]
                 ):
                     self._candidate = None
                     self._candidate_count = 0
@@ -259,7 +270,21 @@ class OCRScanner:
                         matchedBout=None,
                     )
                 else:
-                    self.observe(left[0], right[0], ocr_settings["stable_readings"])
+                    left_name = (
+                        left[0]
+                        if left[1] >= ocr_settings["minimum_confidence"]
+                        else ""
+                    )
+                    right_name = (
+                        right[0]
+                        if right[1] >= ocr_settings["minimum_confidence"]
+                        else ""
+                    )
+                    self.observe(
+                        left_name,
+                        right_name,
+                        ocr_settings["stable_readings"],
+                    )
                 self._stop.wait(ocr_settings["interval_seconds"])
             except Exception as error:
                 message = str(error)

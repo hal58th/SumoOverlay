@@ -109,6 +109,7 @@
     const buttons = [...document.querySelectorAll("button")];
     let currentMode = "manual";
     let preMatchPinned = false;
+    let preMatchSecondsDirty = false;
     function recordText(record) {
       return record ? `${record.wins}-${record.losses}` : "Record unavailable";
     }
@@ -134,10 +135,12 @@
         currentMode === "manual" ? "Switch to automated" : "Switch to manual";
       document.getElementById("mode-help").textContent =
         currentMode === "automated"
-          ? "OCR will select the bout when both names are recognized."
+          ? "OCR can select the bout when either wrestler's name is recognized clearly enough."
           : "Use Previous/Next to select bouts manually.";
-      document.getElementById("pre-match-seconds").value =
-        response.settings.control.pre_match_seconds;
+      const durationInput = document.getElementById("pre-match-seconds");
+      if (!preMatchSecondsDirty && document.activeElement !== durationInput) {
+        durationInput.value = response.settings.control.pre_match_seconds;
+      }
       preMatchPinned = response.settings.control.pre_match_pinned;
       document.getElementById("pre-match-pin").textContent =
         preMatchPinned ? "Hide pre-match now" : "Show pre-match until I turn it off";
@@ -214,6 +217,9 @@
     document.getElementById("mode-toggle").addEventListener("click", toggleMode);
     document.getElementById("pre-match-pin").addEventListener("click", togglePinnedPreMatch);
     document.getElementById("save-duration").addEventListener("click", saveDuration);
+    document.getElementById("pre-match-seconds").addEventListener("input", () => {
+      preMatchSecondsDirty = true;
+    });
     if (typeof io === "function") {
       const socket = io();
       socket.on("bout_update", state => {
@@ -320,6 +326,7 @@
     function updatePreMatch(settings) {
       setBusy(true);
       document.getElementById("error").textContent = "";
+      const savesDuration = Object.prototype.hasOwnProperty.call(settings, "seconds");
       fetch("/api/control/pre-match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -328,6 +335,12 @@
         .then(async response => {
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error || "Unable to update pre-match display");
+          if (
+            savesDuration &&
+            Number(document.getElementById("pre-match-seconds").value) === settings.seconds
+          ) {
+            preMatchSecondsDirty = false;
+          }
           renderBout(payload);
           return loadSettings();
         })

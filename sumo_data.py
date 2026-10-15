@@ -18,6 +18,29 @@ class SumoApiError(RuntimeError):
     """Raised when the sumo-api.com response cannot safely be used."""
 
 
+def _basho_day_key(match: dict[str, Any], label: str) -> tuple[str, int]:
+    basho_id = match.get("bashoId")
+    if not isinstance(basho_id, str) or len(basho_id) != 6 or not basho_id.isdigit():
+        raise SumoApiError(f"sumo-api.com returned an invalid basho ID in {label}")
+    day = _required_int(match.get("day"), f"{label} day")
+    if not 1 <= day <= 16:
+        raise SumoApiError(f"sumo-api.com returned an invalid {label} day")
+    return basho_id, day
+
+
+def _match_order_key(match: dict[str, Any], label: str) -> tuple[str, int, int, int]:
+    basho_id, day = _basho_day_key(match, label)
+    division = match.get("division")
+    if division not in DIVISION_ORDER:
+        raise SumoApiError(f"sumo-api.com returned an invalid division in {label}")
+    return (
+        basho_id,
+        day,
+        DIVISION_ORDER.index(division),
+        _required_int(match.get("matchNo"), f"{label} match number"),
+    )
+
+
 @dataclass(frozen=True)
 class BoutRecord:
     wins: int
@@ -238,6 +261,23 @@ class SumoApiClient:
     def fetch_rikishi(self, rikishi_id: int) -> dict[str, Any]:
         return self._get_json(f"{self.base_url}/rikishi/{rikishi_id}")
 
+    def fetch_rikishi_matches(self, rikishi_id: int) -> list[dict[str, Any]]:
+        payload = self._get_json(f"{self.base_url}/rikishi/{rikishi_id}/matches")
+        matches = payload.get("records")
+        if not isinstance(matches, list) or any(
+            not isinstance(match, dict) for match in matches
+        ):
+            raise SumoApiError("sumo-api.com returned an invalid rikishi match list")
+        total = payload.get("total")
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise SumoApiError("sumo-api.com returned an invalid rikishi match count")
+        if total > len(matches):
+            raise SumoApiError(
+                "sumo-api.com returned only part of the rikishi match history; "
+                "cannot calculate a complete career record"
+            )
+        return matches
+
     def fetch_head_to_head(self, rikishi_id: int, opponent_id: int) -> list[dict[str, Any]]:
         payload = self._get_json(
             f"{self.base_url}/rikishi/{rikishi_id}/matches/{opponent_id}"
@@ -273,6 +313,7 @@ class BashoSchedule:
         self._divisions = DIVISION_ORDER if division is None else (division,)
         self._h2h_cache: dict[tuple[int, int], list[dict[str, Any]]] = {}
         self._rikishi_cache: dict[int, dict[str, Any]] = {}
+        self._career_matches_cache: dict[int, list[dict[str, Any]]] = {}
         self._prior_days = [
             self._fetch_day(current_day)
             for current_day in range(1, day)
@@ -363,8 +404,39 @@ class BashoSchedule:
                 "height": measurement_field("height"),
                 "weight": measurement_field("weight"),
                 "shusshin": text_field("shusshin"),
+                "debut": text_field("debut"),
+                "lifetime": self._lifetime_record(participant.rikishi_id, bout),
             }
         return profiles
+
+    def _lifetime_record(self, rikishi_id: int, bout: Bout) -> dict[str, int]:
+        if rikishi_id not in self._career_matches_cache:
+            self._career_matches_cache[rikishi_id] = self.client.fetch_rikishi_matches(
+                rikishi_id
+            )
+
+        target = (self.basho_id, self.day)
+        wins = 0
+        losses = 0
+        for match in self._career_matches_cache[rikishi_id]:
+            match_key = _basho_day_key(match, "rikishi match history")
+            if match_key >= target:
+                continue
+            winner_id = match.get("winnerId")
+            if winner_id is None:
+                continue
+            winner_id = _required_int(winner_id, "rikishi match winner ID")
+            east_id = _required_int(match.get("eastId"), "rikishi match east ID")
+            west_id = _required_int(match.get("westId"), "rikishi match west ID")
+            if rikishi_id not in (east_id, west_id) or winner_id not in (east_id, west_id):
+                raise SumoApiError(
+                    "sumo-api.com rikishi match does not match the requested wrestler"
+                )
+            if winner_id == rikishi_id:
+                wins += 1
+            else:
+                losses += 1
+        return {"wins": wins, "losses": losses, "matches": wins + losses}
 
     def head_to_head(self, bout: Bout) -> dict[str, Any]:
         pair = (
@@ -385,18 +457,7 @@ class BashoSchedule:
         history: list[str] = []
         prior_matches: list[tuple[tuple[str, int, int, int], int | None]] = []
         for match in self._h2h_cache[pair]:
-            match_division = match.get("division")
-            if match_division not in DIVISION_ORDER:
-                raise SumoApiError("sumo-api.com returned an invalid division in head-to-head history")
-            basho_id = match.get("bashoId")
-            if not isinstance(basho_id, str) or len(basho_id) != 6 or not basho_id.isdigit():
-                raise SumoApiError("sumo-api.com returned an invalid basho ID in head-to-head history")
-            match_key = (
-                basho_id,
-                _required_int(match.get("day"), "head-to-head day"),
-                DIVISION_ORDER.index(match_division),
-                _required_int(match.get("matchNo"), "head-to-head match number"),
-            )
+            match_key = _match_order_key(match, "head-to-head history")
             if match_key >= target:
                 continue
             winner_id = match.get("winnerId")
@@ -424,17 +485,21 @@ class BashoSchedule:
         }
 
     def find_bout_index_by_kanji(self, left_name: str, right_name: str) -> int | None:
-        """Resolve two OCR-read Japanese names to one bout in the selected schedule."""
+        """Resolve one or both OCR-read Japanese names to one scheduled bout."""
         lookup = self.kanji_lookup
-        left_english = lookup.get(left_name) or lookup.get("".join(left_name.split()))
-        right_english = lookup.get(right_name) or lookup.get("".join(right_name.split()))
-        if not left_english or not right_english:
+        detected_names: set[str] = set()
+        for name in (left_name, right_name):
+            if name:
+                english = lookup.get(name) or lookup.get("".join(name.split()))
+                if english:
+                    detected_names.add(english.casefold())
+        if not detected_names:
             return None
 
-        detected_pair = {left_english.casefold(), right_english.casefold()}
         matches = [
             index
             for index, bout in enumerate(self._bouts)
-            if {bout.east.name.casefold(), bout.west.name.casefold()} == detected_pair
+            if detected_names
+            & {bout.east.name.casefold(), bout.west.name.casefold()}
         ]
         return matches[0] if len(matches) == 1 else None

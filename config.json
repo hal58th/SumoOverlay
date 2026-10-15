@@ -12,8 +12,8 @@
     "watch_interval_seconds": 1
   },
   "control": {
-    "mode": "automated",
-    "pre_match_seconds": 10,
+    "mode": "manual",
+    "pre_match_seconds": 20,
     "pre_match_pinned": true
   },
   "ocr": {
@@ -54,6 +54,10 @@
       "width": 1840,
       "height": 1000
     }
+  },
+  "templates": {
+    "main": "main_overlay.html",
+    "pre_match": "pre_match_overlay.html"
   },
   "capture_regions": {
     "abema_scoresheet": {

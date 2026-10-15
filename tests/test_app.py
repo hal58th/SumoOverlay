@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pytest
 
 from app import create_app
-from config import SettingsError, default_settings, validate_settings
+from config import SettingsError, default_settings, load_settings, validate_settings
 from sumo_data import DIVISION_ORDER, Bout, BoutRecord, BoutSide, SumoApiError
 
 
@@ -155,6 +155,128 @@ def test_pages_and_kanji_lookup_are_available():
     assert client.get("/control").status_code == 200
     assert client.get("/api/lookup").json == {"栃大海": "Tochitaikai"}
     assert client.get("/api/state").json["headToHead"] is None
+
+
+def test_overlay_routes_load_configured_custom_template_files(tmp_path):
+    settings = default_settings()
+    settings["templates"]["pre_match"] = "custom_pre_match.html"
+    settings_path = tmp_path / "config.json"
+    write_config(settings_path, settings)
+    custom_template_dir = tmp_path / "custom_templates"
+    custom_template_dir.mkdir()
+    (custom_template_dir / "custom_pre_match.html").write_text(
+        "<main>Custom pre-match overlay</main>", encoding="utf-8"
+    )
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    client = app.test_client()
+
+    assert b"Custom pre-match overlay" in client.get("/overlay").data
+    assert b"Makuuchi: 1" in client.get("/main-overlay").data
+    assert b"Sumo Overlay Controls" in client.get("/control").data
+
+
+def test_partial_override_config_merges_nested_values(tmp_path):
+    settings_path = tmp_path / "config.json"
+    override_path = tmp_path / "config.firefox.json"
+    settings = default_settings()
+    settings["overlay"]["main"]["y"] = 60
+    write_config(settings_path, settings)
+    write_config(
+        override_path,
+        {"ocr": {"monitor": 2}, "overlay": {"main": {"x": 140}}},
+    )
+
+    effective = load_settings(settings_path, override_path)
+
+    assert effective["ocr"]["monitor"] == 2
+    assert effective["ocr"]["interval_seconds"] == settings["ocr"]["interval_seconds"]
+    assert effective["overlay"]["main"] == {
+        **settings["overlay"]["main"],
+        "x": 140,
+    }
+
+
+def test_control_updates_persist_to_the_layer_that_defines_the_setting(tmp_path):
+    settings_path = tmp_path / "config.json"
+    override_path = tmp_path / "config.firefox.json"
+    write_config(settings_path, default_settings())
+    write_config(override_path, {"control": {"pre_match_seconds": 30}})
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        override_config_path=override_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+
+    try:
+        response = app.test_client().post(
+            "/api/control/pre-match", json={"seconds": 45}
+        )
+
+        assert response.status_code == 200
+        assert response.json["settings"]["preMatchSeconds"] == 45
+        assert json.loads(override_path.read_text(encoding="utf-8")) == {
+            "control": {"pre_match_seconds": 45}
+        }
+        assert json.loads(settings_path.read_text(encoding="utf-8"))["control"][
+            "pre_match_seconds"
+        ] == 10
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_override_config_changes_are_hot_reloaded(tmp_path):
+    settings_path = tmp_path / "config.json"
+    override_path = tmp_path / "config.firefox.json"
+    settings = default_settings()
+    settings["server"]["watch_interval_seconds"] = 0.05
+    write_config(settings_path, settings)
+    write_config(override_path, {"ocr": {"monitor": 2}})
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        override_config_path=override_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+    client = app.test_client()
+
+    try:
+        write_config(override_path, {"ocr": {"monitor": 3}})
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            response = client.get("/api/settings").json
+            if response["settings"]["ocr"]["monitor"] == 3:
+                break
+            time.sleep(0.05)
+        assert response["settings"]["ocr"]["monitor"] == 3
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_template_settings_accept_only_plain_html_filenames(tmp_path):
+    settings = default_settings()
+    settings["templates"]["pre_match"] = "../outside.html"
+
+    with pytest.raises(SettingsError, match="HTML filename without a path"):
+        validate_settings(settings)
+
+    settings = default_settings()
+    settings["templates"]["pre_match"] = "missing_overlay.html"
+    settings_path = tmp_path / "config.json"
+    write_config(settings_path, settings)
+    with pytest.raises(SettingsError, match="was not found"):
+        create_app(
+            schedule=FakeSchedule([make_bout(1, 10, 11)]),
+            config_path=settings_path,
+            watch_config=False,
+        )
 
 
 def test_head_to_head_is_served_by_the_pre_match_state_route():
@@ -395,6 +517,27 @@ def test_ocr_match_selects_bout_and_broadcasts_overlay_updates(tmp_path):
     assert any(event["name"] == "bout_update" for event in events)
     assert any(event["name"] == "pre_match_update" for event in events)
     socket_client.disconnect()
+
+
+def test_ocr_match_selects_bout_when_only_one_name_is_recognized(tmp_path):
+    class OCRSchedule(FakeSchedule):
+        def find_bout_index_by_kanji(self, left_name, right_name):
+            return 1 if (left_name, right_name) == ("大喜翔", "") else None
+
+    settings = default_settings()
+    settings["control"]["mode"] = "automated"
+    settings_path = tmp_path / "config.json"
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=OCRSchedule([make_bout(1, 10, 11), make_bout(2, 12, 13)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+
+    app.extensions["ocr_scanner"].observe("大喜翔", "", stable_readings=1)
+
+    assert app.test_client().get("/api/state").json["index"] == 1
 
 
 def test_ocr_retriggers_pre_match_for_the_already_selected_bout(tmp_path):

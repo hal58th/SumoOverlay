@@ -186,10 +186,19 @@ body {
   margin-top: 3px;
 }
 
+.wrestler-profile strong {
+  color: #fff;
+  font-weight: 800;
+}
+
 .record {
   color: #e8bd68;
   font-size: clamp(26px, 3vw, 54px);
   font-weight: 800;
+}
+
+.record strong {
+  font-weight: 900;
 }
 
 .versus {

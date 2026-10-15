@@ -136,7 +136,10 @@ def test_schedule_matches_ocr_names_to_the_unique_bout_in_either_orientation():
 
     assert schedule.find_bout_index_by_kanji("大喜翔", "栃幸大") == 0
     assert schedule.find_bout_index_by_kanji("栃幸大", "大喜翔") == 0
-    assert schedule.find_bout_index_by_kanji("知らない", "栃幸大") is None
+    assert schedule.find_bout_index_by_kanji("大喜翔", "") == 0
+    assert schedule.find_bout_index_by_kanji("", "栃幸大") == 0
+    assert schedule.find_bout_index_by_kanji("知らない", "栃幸大") == 0
+    assert schedule.find_bout_index_by_kanji("知らない", "") is None
 
 
 def test_schedule_does_not_choose_between_ambiguous_ocr_matches():
@@ -152,6 +155,22 @@ def test_schedule_does_not_choose_between_ambiguous_ocr_matches():
     schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
 
     assert schedule.find_bout_index_by_kanji("大喜翔", "栃幸大") is None
+
+
+def test_schedule_does_not_choose_between_bouts_from_one_recognized_wrestler():
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2), match(2, 1, 3)]
+
+        def fetch_rikishi(self, rikishi_id):
+            return {
+                "shikonaJp": {1: "大喜翔", 2: "栃幸大", 3: "藤天晴"}[rikishi_id],
+                "shikonaEn": {1: "Rikishi1", 2: "Rikishi2", 3: "Rikishi3"}[rikishi_id],
+            }
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+
+    assert schedule.find_bout_index_by_kanji("大喜翔", "") is None
 
 
 def test_schedule_fetches_ocr_profiles_concurrently():
@@ -178,6 +197,7 @@ def test_schedule_returns_cached_broadcast_profile_details():
     class FakeClient:
         def __init__(self):
             self.profile_calls = []
+            self.career_calls = []
 
         def fetch_torikumi(self, basho_id, division, day):
             return [match(1, 1, 2)]
@@ -190,8 +210,13 @@ def test_schedule_returns_cached_broadcast_profile_details():
                 "height": 190,
                 "weight": 188,
                 "shusshin": "Ishikawa",
+                "debut": "202305",
                 "unrelated": "not exposed",
             }
+
+        def fetch_rikishi_matches(self, rikishi_id):
+            self.career_calls.append(rikishi_id)
+            return []
 
     client = FakeClient()
     schedule = BashoSchedule(client, "202505", "Makuuchi", 1)
@@ -205,6 +230,8 @@ def test_schedule_returns_cached_broadcast_profile_details():
             "height": 190,
             "weight": 188,
             "shusshin": "Ishikawa",
+            "debut": "202305",
+            "lifetime": {"wins": 0, "losses": 0, "matches": 0},
         },
         "west": {
             "birthDate": "2000-06-07T00:00:00Z",
@@ -212,10 +239,52 @@ def test_schedule_returns_cached_broadcast_profile_details():
             "height": 190,
             "weight": 188,
             "shusshin": "Ishikawa",
+            "debut": "202305",
+            "lifetime": {"wins": 0, "losses": 0, "matches": 0},
         },
     }
     schedule.wrestler_profiles(bout)
     assert client.profile_calls == [1, 2]
+    assert client.career_calls == [1, 2]
+
+
+def test_lifetime_records_include_only_completed_matches_before_selected_bout():
+    def career_match(basho_id, day, match_no, east_id, west_id, winner_id):
+        return {
+            "bashoId": basho_id,
+            "division": "Mae-zumo" if basho_id == "202401" else "Makuuchi",
+            "day": day,
+            "matchNo": match_no,
+            "eastId": east_id,
+            "westId": west_id,
+            "winnerId": winner_id,
+        }
+
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(3, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            return {"shikonaJp": f"力士{rikishi_id}", "shikonaEn": f"Rikishi{rikishi_id}"}
+
+        def fetch_rikishi_matches(self, rikishi_id):
+            if rikishi_id == 1:
+                return [
+                    career_match("202401", 1, 1, 1, 8, 1),
+                    career_match("202403", 16, 1, 1, 9, 9),
+                    career_match("202505", 1, 4, 1, 2, 1),
+                    career_match("202505", 1, 5, 1, 3, 3),
+                ]
+            return [
+                career_match("202401", 1, 2, 7, 2, 7),
+                career_match("202403", 2, 2, 6, 2, 6),
+            ]
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+    profiles = schedule.wrestler_profiles(schedule.bouts[0])
+
+    assert profiles["east"]["lifetime"] == {"wins": 1, "losses": 1, "matches": 2}
+    assert profiles["west"]["lifetime"] == {"wins": 0, "losses": 2, "matches": 2}
 
 
 def test_cached_sumo_api_snapshot_supports_all_divisions_and_safe_h2h(sumo_api_client):
@@ -254,7 +323,7 @@ def test_head_to_head_history_is_oldest_first_and_excludes_future_matches():
             return [
                 {
                     "bashoId": "202403",
-                    "day": 3,
+                    "day": 16,
                     "division": "Makuuchi",
                     "matchNo": 4,
                     "winnerId": 1,
@@ -313,6 +382,44 @@ def test_live_api_client_targets_documented_h2h_route():
 
     assert client.fetch_head_to_head(19, 8850) == []
     assert session.url.endswith("/rikishi/19/matches/8850")
+
+
+def test_live_api_client_fetches_complete_rikishi_match_history():
+    class CapturedResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"records": [{"winnerId": 19}], "total": 1}
+
+    class CapturingSession:
+        url = None
+
+        def get(self, url, timeout):
+            self.url = url
+            return CapturedResponse()
+
+    session = CapturingSession()
+    client = SumoApiClient(session=session)
+
+    assert client.fetch_rikishi_matches(19) == [{"winnerId": 19}]
+    assert session.url.endswith("/rikishi/19/matches")
+
+
+def test_api_client_rejects_partial_rikishi_match_history():
+    class PartialResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"records": [], "total": 1}
+
+    class PartialSession:
+        def get(self, url, timeout):
+            return PartialResponse()
+
+    with pytest.raises(SumoApiError, match="only part"):
+        SumoApiClient(session=PartialSession()).fetch_rikishi_matches(19)
 
 
 def test_api_client_rejects_partial_h2h_history():

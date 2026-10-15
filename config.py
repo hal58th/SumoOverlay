@@ -53,6 +53,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "main": {"x": 16, "y": 12, "width": 640, "height": 88},
         "pre_match": {"x": 40, "y": 40, "width": 1840, "height": 1000},
     },
+    "templates": {
+        "main": "main_overlay.html",
+        "pre_match": "pre_match_overlay.html",
+    },
     "capture_regions": {
         "abema_scoresheet": {"x": 0, "y": 0, "width": 1920, "height": 1080},
     },
@@ -246,10 +250,33 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             raise SettingsError(f"overlay.{key} must fit inside overlay.canvas")
     settings["overlay"] = overlay
 
+    templates = settings.get("templates")
+    if not isinstance(templates, dict):
+        raise SettingsError("templates must be a JSON object")
+    unknown_template_keys = set(templates) - {"main", "pre_match"}
+    if unknown_template_keys:
+        raise SettingsError(f"Unknown template setting: {sorted(unknown_template_keys)[0]}")
+    templates = {**default_settings()["templates"], **templates}
+    for key, value in templates.items():
+        if (
+            not isinstance(value, str)
+            or not value
+            or Path(value).name != value
+            or Path(value).suffix.lower() != ".html"
+        ):
+            raise SettingsError(f"templates.{key} must be an HTML filename without a path")
+    settings["templates"] = templates
+
     return settings
 
 
-def load_settings(path: Path) -> dict[str, Any]:
+def load_settings(path: Path, override_path: Path | None = None) -> dict[str, Any]:
+    settings = _read_settings_file(path)
+    overrides = _read_settings_file(override_path) if override_path is not None else {}
+    return validate_settings(_merge_settings(settings, overrides))
+
+
+def _read_settings_file(path: Path) -> dict[str, Any]:
     try:
         with path.open("r", encoding="utf-8") as config_file:
             raw = json.load(config_file)
@@ -265,7 +292,79 @@ def load_settings(path: Path) -> dict[str, Any]:
         raise SettingsError(f"Settings file {path} must be UTF-8 encoded JSON") from error
     except OSError as error:
         raise SettingsError(f"Unable to read settings file {path}: {error}") from error
-    return validate_settings(raw)
+    if not isinstance(raw, dict):
+        raise SettingsError(f"Settings file {path} must contain a JSON object")
+    return raw
+
+
+def _merge_settings(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_settings(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def _contains_path(settings: dict[str, Any], path: tuple[str, ...]) -> bool:
+    current: Any = settings
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return False
+        current = current[key]
+    return True
+
+
+def _set_path(settings: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+    current = settings
+    for key in path[:-1]:
+        child = current.get(key)
+        if not isinstance(child, dict):
+            child = {}
+            current[key] = child
+        current = child
+    current[path[-1]] = copy.deepcopy(value)
+
+
+def _changed_paths(
+    previous: dict[str, Any], updated: dict[str, Any], prefix: tuple[str, ...] = ()
+) -> list[tuple[str, ...]]:
+    changed: list[tuple[str, ...]] = []
+    for key in previous.keys() | updated.keys():
+        old_value = previous.get(key)
+        new_value = updated.get(key)
+        path = (*prefix, key)
+        if isinstance(old_value, dict) and isinstance(new_value, dict):
+            changed.extend(_changed_paths(old_value, new_value, path))
+        elif old_value != new_value:
+            changed.append(path)
+    return changed
+
+
+def _write_settings_file(path: Path, settings: dict[str, Any], logger: logging.Logger) -> None:
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as config_file:
+            json.dump(settings, config_file, ensure_ascii=False, indent=2)
+            config_file.write("\n")
+            config_file.flush()
+            os.fsync(config_file.fileno())
+        os.replace(temporary, path)
+    except OSError as error:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("Unable to remove temporary settings file %s", temporary)
+        raise SettingsError(f"Unable to save settings file {path}: {error}") from error
+
+
+def _settings_file_signature(path: Path) -> tuple[int, int]:
+    try:
+        stat = path.stat()
+    except OSError as error:
+        raise SettingsError(f"Unable to inspect settings file {path}: {error}") from error
+    return stat.st_mtime_ns, stat.st_size
 
 
 class SettingsWatcher:
@@ -275,25 +374,43 @@ class SettingsWatcher:
         interval_seconds: float,
         on_change: Callable[[dict[str, Any]], None],
         logger: logging.Logger,
+        override_path: Path | None = None,
     ) -> None:
         self.path = path
+        self.override_path = override_path
         self.interval_seconds = interval_seconds
         self.on_change = on_change
         self.logger = logger
         self._stop = Event()
         self._lock = RLock()
-        self._settings = load_settings(path)
+        self._base_raw = _read_settings_file(path)
+        self._override_raw = (
+            _read_settings_file(override_path) if override_path is not None else {}
+        )
+        self._settings = validate_settings(
+            _merge_settings(self._base_raw, self._override_raw)
+        )
         self._signature = self._file_signature()
         self._last_error: str | None = None
         self._thread = Thread(target=self._watch, name="settings-watcher", daemon=True)
         self._thread.start()
 
-    def _file_signature(self) -> tuple[int, int]:
-        try:
-            stat = self.path.stat()
-        except OSError as error:
-            raise SettingsError(f"Unable to inspect settings file {self.path}: {error}") from error
-        return stat.st_mtime_ns, stat.st_size
+    def _file_signature(self) -> tuple[tuple[int, int], ...]:
+        paths = (self.path,) if self.override_path is None else (
+            self.path,
+            self.override_path,
+        )
+        return tuple(_settings_file_signature(path) for path in paths)
+
+    def _load_layers(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        base_raw = _read_settings_file(self.path)
+        override_raw = (
+            _read_settings_file(self.override_path)
+            if self.override_path is not None
+            else {}
+        )
+        settings = validate_settings(_merge_settings(base_raw, override_raw))
+        return base_raw, override_raw, settings
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -306,24 +423,41 @@ class SettingsWatcher:
 
     def write(self, settings: dict[str, Any]) -> dict[str, Any]:
         validated = validate_settings(settings)
-        temporary = self.path.with_name(f".{self.path.name}.tmp")
-        try:
-            with temporary.open("w", encoding="utf-8", newline="\n") as config_file:
-                json.dump(validated, config_file, ensure_ascii=False, indent=2)
-                config_file.write("\n")
-                config_file.flush()
-                os.fsync(config_file.fileno())
-            os.replace(temporary, self.path)
-        except OSError as error:
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                self.logger.exception("Unable to remove temporary settings file %s", temporary)
-            raise SettingsError(f"Unable to save settings file {self.path}: {error}") from error
-
+        if self.override_path is None:
+            _write_settings_file(self.path, validated, self.logger)
+            base_raw, override_raw = validated, {}
+        else:
+            with self._lock:
+                previous = copy.deepcopy(self._settings)
+                base_raw = copy.deepcopy(self._base_raw)
+                override_raw = copy.deepcopy(self._override_raw)
+            base_changed = False
+            override_changed = False
+            for path in _changed_paths(previous, validated):
+                if _contains_path(override_raw, path):
+                    _set_path(override_raw, path, self._get_path(validated, path))
+                    override_changed = True
+                else:
+                    _set_path(base_raw, path, self._get_path(validated, path))
+                    base_changed = True
+            validated = validate_settings(_merge_settings(base_raw, override_raw))
+            if override_changed:
+                _write_settings_file(self.override_path, override_raw, self.logger)
+            if base_changed:
+                _write_settings_file(self.path, base_raw, self.logger)
         self.apply(validated)
+        with self._lock:
+            self._base_raw = base_raw
+            self._override_raw = override_raw
         self._signature = self._file_signature()
         return validated
+
+    @staticmethod
+    def _get_path(settings: dict[str, Any], path: tuple[str, ...]) -> Any:
+        current: Any = settings
+        for key in path:
+            current = current[key]
+        return current
 
     def apply(self, settings: dict[str, Any]) -> None:
         validated = validate_settings(settings)
@@ -335,14 +469,15 @@ class SettingsWatcher:
 
     def _watch(self) -> None:
         while not self._stop.wait(float(self.interval_seconds)):
-            if self._signature is None and not self.path.exists():
-                continue
             try:
                 signature = self._file_signature()
                 if signature == self._signature:
                     continue
-                settings = load_settings(self.path)
+                base_raw, override_raw, settings = self._load_layers()
                 self.apply(settings)
+                with self._lock:
+                    self._base_raw = base_raw
+                    self._override_raw = override_raw
                 self._signature = signature
             except (SettingsError, OSError, ValueError) as error:
                 try:

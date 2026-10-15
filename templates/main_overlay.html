@@ -30,6 +30,22 @@
   </main>
   <script>
     const mainOverlay = document.getElementById("main-overlay");
+    const MIN_NAME_FONT_SIZE = 10;
+
+    function fitNameToWidth(element) {
+      element.style.fontSize = "";
+      let fontSize = Number.parseFloat(window.getComputedStyle(element).fontSize);
+      if (!Number.isFinite(fontSize) || element.clientWidth <= 0) return;
+
+      while (fontSize > MIN_NAME_FONT_SIZE && element.scrollWidth > element.clientWidth) {
+        fontSize = Math.max(MIN_NAME_FONT_SIZE, fontSize - 1);
+        element.style.fontSize = `${fontSize}px`;
+      }
+    }
+
+    function fitWrestlerNames() {
+      document.querySelectorAll(".main-name").forEach(fitNameToWidth);
+    }
 
     function placeOverlay(bounds, canvas) {
       mainOverlay.style.left = `${bounds.x / canvas.width * 100}%`;
@@ -79,7 +95,10 @@
       document.getElementById("east-rank").textContent = abbreviatedRank(state.east.rank);
       document.getElementById("west-rank").textContent = abbreviatedRank(state.west.rank);
       mainOverlay.hidden = false;
+      fitWrestlerNames();
     }
+
+    window.addEventListener("resize", fitWrestlerNames);
 
     fetch("/api/state")
       .then(response => {
