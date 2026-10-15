@@ -1,0 +1,44 @@
+{
+  "basho_id": "202609",
+  "division": "all",
+  "day": 1,
+  "api": {
+    "base_url": "https://sumo-api.com/api",
+    "timeout_seconds": 15
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 5000,
+    "watch_interval_seconds": 1
+  },
+  "control": {
+    "mode": "manual",
+    "pre_match_seconds": 10
+  },
+  "overlay": {
+    "canvas": {
+      "width": 1920,
+      "height": 1080
+    },
+    "main": {
+      "x": 16,
+      "y": 12,
+      "width": 640,
+      "height": 52
+    },
+    "pre_match": {
+      "x": 400,
+      "y": 760,
+      "width": 1120,
+      "height": 260
+    }
+  },
+  "capture_regions": {
+    "abema_scoresheet": {
+      "x": 0,
+      "y": 0,
+      "width": 1920,
+      "height": 1080
+    }
+  }
+}

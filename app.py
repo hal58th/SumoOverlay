@@ -1,84 +1,140 @@
-"""Flask application and local control server for the Sumo OBS overlay."""
+"""Flask application and local control server for the Sumo OBS overlays."""
 
 from __future__ import annotations
 
+import argparse
+import copy
 import logging
-import os
-import re
-from typing import Any, Mapping
+from pathlib import Path
+from threading import RLock
+from typing import Any, Callable
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
 
 from bout_state import BoutController
+from config import DIVISION_NAMES, SettingsError, SettingsWatcher, load_settings
 from sumo_data import BashoSchedule, SumoApiClient, SumoApiError
 
 
-DIVISIONS = ("Makuuchi", "Juryo", "Makushita", "Sandanme", "Jonidan", "Jonokuchi")
-
-
-def _validate_settings(app: Flask) -> tuple[str, str, int]:
-    basho_id = app.config["SUMO_BASHO"]
-    division = app.config["SUMO_DIVISION"]
-    day = app.config["SUMO_DAY"]
-    if not isinstance(basho_id, str) or re.fullmatch(r"\d{6}", basho_id) is None:
-        raise ValueError("SUMO_BASHO must be a six-digit basho ID such as 202505")
-    if division not in DIVISIONS:
-        raise ValueError(f"SUMO_DIVISION must be one of: {', '.join(DIVISIONS)}")
-    if isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 15:
-        raise ValueError("SUMO_DAY must be an integer from 1 through 15")
-    return basho_id, division, day
-
-
-def _environment_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except ValueError as error:
-        raise ValueError(f"{name} must be an integer") from error
-
-
-def _environment_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, str(default)))
-    except ValueError as error:
-        raise ValueError(f"{name} must be a number") from error
+DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.json")
+DATA_SETTINGS = ("basho_id", "division", "day", "api")
 
 
 def create_app(
     schedule: Any | None = None,
-    config: Mapping[str, Any] | None = None,
+    config_path: str | Path | None = None,
+    test_config: dict[str, Any] | None = None,
+    watch_config: bool = True,
+    schedule_factory: Callable[[dict[str, Any]], Any] | None = None,
 ) -> Flask:
     app = Flask(__name__)
-    app.config.from_mapping(
-        SUMO_BASHO=os.environ.get("SUMO_BASHO", ""),
-        SUMO_DIVISION=os.environ.get("SUMO_DIVISION", "Makuuchi"),
-        SUMO_DAY=_environment_int("SUMO_DAY", 1),
-        SUMO_API_BASE_URL=os.environ.get("SUMO_API_BASE_URL", "https://sumo-api.com/api"),
-        SUMO_API_TIMEOUT=_environment_float("SUMO_API_TIMEOUT", 10.0),
-        HOST=os.environ.get("HOST", "127.0.0.1"),
-        PORT=_environment_int("PORT", 5000),
-        SECRET_KEY=os.environ.get("SUMO_SECRET_KEY", "local-sumo-overlay"),
-    )
-    if config:
-        app.config.update(config)
+    if test_config:
+        app.config.update(test_config)
+
+    settings_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    settings = load_settings(settings_path)
+
+    def build_schedule(new_settings: dict[str, Any]) -> BashoSchedule:
+        if schedule_factory is not None:
+            return schedule_factory(new_settings)
+        client = SumoApiClient(
+            base_url=new_settings["api"]["base_url"],
+            timeout=new_settings["api"]["timeout_seconds"],
+        )
+        return BashoSchedule(
+            client,
+            new_settings["basho_id"],
+            (
+                "all"
+                if new_settings["division"] == 0
+                else DIVISION_NAMES[new_settings["division"]]
+            ),
+            new_settings["day"],
+        )
 
     if schedule is None:
-        basho_id, division, day = _validate_settings(app)
-        client = SumoApiClient(
-            base_url=app.config["SUMO_API_BASE_URL"],
-            timeout=app.config["SUMO_API_TIMEOUT"],
-        )
-        schedule = BashoSchedule(client, basho_id, division, day)
+        schedule = build_schedule(settings)
 
     controller = BoutController(schedule)
     socketio = SocketIO(app, async_mode="threading")
     app.extensions["bout_controller"] = controller
     app.extensions["sumo_schedule"] = schedule
     app.extensions["socketio"] = socketio
+    app.extensions["settings_path"] = settings_path
+    settings_lock = RLock()
+    active_settings = settings
+    watcher: SettingsWatcher | None = None
+
+    def public_state(include_head_to_head: bool = False) -> dict[str, Any]:
+        result = controller.state(include_head_to_head=include_head_to_head)
+        with settings_lock:
+            current = copy.deepcopy(active_settings)
+        result["settings"] = {
+            "division": current["division"],
+            "bashoId": current["basho_id"],
+            "day": current["day"],
+            "mode": current["control"]["mode"],
+            "preMatchEnabled": current["control"]["pre_match_seconds"] > 0,
+            "preMatchSeconds": current["control"]["pre_match_seconds"],
+            "preMatchPinned": current["control"]["pre_match_pinned"],
+            "overlay": current["overlay"],
+        }
+        return result
+
+    def broadcast_state(update_pre_match: bool) -> None:
+        socketio.emit("bout_update", public_state())
+        if update_pre_match:
+            try:
+                socketio.emit("pre_match_update", public_state(include_head_to_head=True))
+            except SumoApiError as error:
+                app.logger.error("Unable to update head-to-head display: %s", error)
+                socketio.emit("pre_match_error", {"error": str(error)})
+
+    def reload_settings(new_settings: dict[str, Any]) -> None:
+        nonlocal active_settings
+        with settings_lock:
+            previous = active_settings
+
+        changed_data = any(previous[key] != new_settings[key] for key in DATA_SETTINGS)
+        update_pre_match = (
+            changed_data
+            or previous["control"]["pre_match_seconds"]
+            != new_settings["control"]["pre_match_seconds"]
+            or previous["control"]["pre_match_pinned"]
+            != new_settings["control"]["pre_match_pinned"]
+        )
+        if changed_data:
+            try:
+                replacement = build_schedule(new_settings)
+            except SumoApiError as error:
+                raise SettingsError(f"Could not load the selected basho data: {error}") from error
+            controller.replace_schedule(replacement, reset_index=True)
+
+        with settings_lock:
+            active_settings = copy.deepcopy(new_settings)
+        app.extensions["sumo_schedule"] = controller.schedule
+        broadcast_state(update_pre_match)
+
+    if watch_config:
+        watcher = SettingsWatcher(
+            settings_path,
+            settings["server"]["watch_interval_seconds"],
+            reload_settings,
+            app.logger,
+        )
+
+    app.extensions["sumo_schedule"] = schedule
+    app.extensions["settings_watcher"] = watcher
 
     @app.get("/overlay")
-    def overlay() -> str:
-        return render_template("overlay.html")
+    @app.get("/pre-match-overlay")
+    def pre_match_overlay() -> str:
+        return render_template("pre_match_overlay.html")
+
+    @app.get("/main-overlay")
+    def main_overlay() -> str:
+        return render_template("main_overlay.html")
 
     @app.get("/control")
     def control() -> str:
@@ -86,23 +142,59 @@ def create_app(
 
     @app.get("/api/state")
     def get_state() -> Any:
-        return jsonify(controller.state())
+        try:
+            return jsonify(public_state())
+        except SumoApiError as error:
+            app.logger.error("Unable to build current bout state: %s", error)
+            return jsonify({"error": str(error)}), 502
+
+    @app.get("/api/pre-match-state")
+    def get_pre_match_state() -> Any:
+        try:
+            return jsonify(public_state(include_head_to_head=True))
+        except SumoApiError as error:
+            app.logger.error("Unable to build head-to-head state: %s", error)
+            return jsonify({"error": str(error)}), 502
+
+    @app.get("/api/settings")
+    def get_settings() -> Any:
+        with settings_lock:
+            current = copy.deepcopy(active_settings)
+        initial_server = settings["server"]
+        return jsonify(
+            {
+                "settings": current,
+                "reloadError": watcher.last_error if watcher else None,
+                "restartRequired": {
+                    "host": current["server"]["host"] != initial_server["host"],
+                    "port": current["server"]["port"] != initial_server["port"],
+                },
+            }
+        )
 
     @app.get("/api/lookup")
     def get_lookup() -> Any:
         try:
-            return jsonify(getattr(schedule, "kanji_lookup", {}))
+            return jsonify(getattr(controller.schedule, "kanji_lookup", {}))
         except SumoApiError as error:
             app.logger.error("Unable to build kanji lookup: %s", error)
             return jsonify({"error": str(error)}), 502
 
     def move_bout(offset: int) -> Any:
         try:
-            state = controller.move(offset)
+            old_index = controller.state()["index"]
+            controller.move(offset)
+            state = public_state()
         except SumoApiError as error:
             app.logger.error("Unable to update bout state: %s", error)
             return jsonify({"error": str(error)}), 502
         socketio.emit("bout_update", state)
+        if state["index"] != old_index:
+            try:
+                socketio.emit("pre_match_update", public_state(include_head_to_head=True))
+            except SumoApiError as error:
+                app.logger.error("Unable to update head-to-head display: %s", error)
+                socketio.emit("pre_match_error", {"error": str(error)})
         return jsonify(state)
 
     @app.post("/api/control/next")
@@ -113,9 +205,98 @@ def create_app(
     def previous_bout() -> Any:
         return move_bout(-1)
 
+    @app.post("/api/control/division")
+    def jump_to_division() -> Any:
+        payload = request.get_json(silent=True)
+        division = payload.get("division") if isinstance(payload, dict) else None
+        if (
+            isinstance(division, bool)
+            or not isinstance(division, int)
+            or division not in DIVISION_NAMES
+        ):
+            return jsonify({"error": "division must be a number from 1 through 6"}), 400
+        try:
+            old_index = controller.state()["index"]
+            controller.jump_to_division(division)
+            state = public_state()
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 404
+        except SumoApiError as error:
+            app.logger.error("Unable to jump to division %s: %s", division, error)
+            return jsonify({"error": str(error)}), 502
+        socketio.emit("bout_update", state)
+        if state["index"] != old_index:
+            try:
+                socketio.emit("pre_match_update", public_state(include_head_to_head=True))
+            except SumoApiError as error:
+                app.logger.error("Unable to update head-to-head display: %s", error)
+                socketio.emit("pre_match_error", {"error": str(error)})
+        return jsonify(state)
+
+    @app.post("/api/control/mode")
+    def set_mode() -> Any:
+        payload = request.get_json(silent=True)
+        mode = payload.get("mode") if isinstance(payload, dict) else None
+        if mode not in ("manual", "automated"):
+            return jsonify({"error": "mode must be 'manual' or 'automated'"}), 400
+        if watcher is None:
+            return jsonify({"error": "Live configuration reload is disabled"}), 503
+
+        with settings_lock:
+            updated_settings = copy.deepcopy(active_settings)
+        updated_settings["control"]["mode"] = mode
+        try:
+            watcher.write(updated_settings)
+            state = public_state()
+        except (SettingsError, SumoApiError) as error:
+            app.logger.error("Unable to update control mode: %s", error)
+            return jsonify({"error": str(error)}), 500
+        return jsonify(state)
+
+    @app.post("/api/control/pre-match")
+    def set_pre_match() -> Any:
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "a JSON object is required"}), 400
+
+        with settings_lock:
+            updated_settings = copy.deepcopy(active_settings)
+        if "pinned" in payload:
+            if not isinstance(payload["pinned"], bool):
+                return jsonify({"error": "pinned must be true or false"}), 400
+            updated_settings["control"]["pre_match_pinned"] = payload["pinned"]
+        if "seconds" in payload:
+            seconds = payload["seconds"]
+            if (
+                isinstance(seconds, bool)
+                or not isinstance(seconds, (int, float))
+                or seconds < 0
+            ):
+                return jsonify({"error": "seconds must be a number that is zero or greater"}), 400
+            updated_settings["control"]["pre_match_seconds"] = seconds
+        if not any(key in payload for key in ("seconds", "pinned")):
+            return jsonify({"error": "provide seconds and/or pinned"}), 400
+
+        try:
+            watcher.write(updated_settings)
+            state = public_state()
+        except (SettingsError, SumoApiError) as error:
+            app.logger.error("Unable to update pre-match settings: %s", error)
+            return jsonify({"error": str(error)}), 500
+        return jsonify(state)
+
     @socketio.on("connect")
     def send_initial_state() -> None:
-        emit("bout_update", controller.state())
+        try:
+            emit("bout_update", public_state())
+        except SumoApiError as error:
+            app.logger.error("Unable to send initial bout state: %s", error)
+            emit("state_error", {"error": str(error)})
+        try:
+            emit("pre_match_update", public_state(include_head_to_head=True))
+        except SumoApiError as error:
+            app.logger.error("Unable to send initial head-to-head state: %s", error)
+            emit("pre_match_error", {"error": str(error)})
 
     @socketio.on("control")
     def socket_control(message: Any) -> None:
@@ -123,24 +304,47 @@ def create_app(
             emit("control_error", {"error": "action must be 'next' or 'prev'"})
             return
         try:
-            state = controller.move(1 if message["action"] == "next" else -1)
+            old_index = controller.state()["index"]
+            controller.move(1 if message["action"] == "next" else -1)
+            state = public_state()
         except SumoApiError as error:
             app.logger.error("Unable to update bout state: %s", error)
             emit("control_error", {"error": str(error)})
             return
         emit("bout_update", state, broadcast=True)
+        if state["index"] != old_index:
+            try:
+                emit(
+                    "pre_match_update",
+                    public_state(include_head_to_head=True),
+                    broadcast=True,
+                )
+            except SumoApiError as error:
+                app.logger.error("Unable to update head-to-head display: %s", error)
+                emit("pre_match_error", {"error": str(error)}, broadcast=True)
 
     return app
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the Sumo OBS overlay server")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help=f"Path to the JSON settings file (default: {DEFAULT_CONFIG_PATH})",
+    )
+    arguments = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO)
-    app = create_app()
+    app = create_app(config_path=arguments.config)
+    watcher: SettingsWatcher = app.extensions["settings_watcher"]
+    settings = watcher.snapshot()
     socketio: SocketIO = app.extensions["socketio"]
     socketio.run(
         app,
-        host=app.config["HOST"],
-        port=app.config["PORT"],
+        host=settings["server"]["host"],
+        port=settings["server"]["port"],
         allow_unsafe_werkzeug=True,
     )
 

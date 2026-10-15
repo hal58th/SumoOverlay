@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumo Pre-Match Overlay</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css') }}">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <main id="pre-match-overlay" class="configured-box pre-match-card" hidden aria-live="polite">
+    <div class="bout-meta">
+      <span><span id="division"></span> <span id="division-number"></span></span>
+      <span class="bout-meta-right">
+        <span id="bout-number"></span>
+        <span id="bouts-until-next-stage"></span>
+      </span>
+    </div>
+    <div class="matchup">
+      <section class="wrestler east">
+        <div id="east-name" class="wrestler-name"></div>
+        <div class="rank-record">
+          <div id="east-rank" class="rank"></div>
+          <div id="east-record" class="record"></div>
+        </div>
+      </section>
+      <div class="versus">VS</div>
+      <section class="wrestler west">
+        <div id="west-name" class="wrestler-name"></div>
+        <div class="rank-record">
+          <div id="west-rank" class="rank"></div>
+          <div id="west-record" class="record"></div>
+        </div>
+      </section>
+    </div>
+    <div class="head-to-head">
+      <div id="head-to-head-score" class="head-to-head-score"></div>
+      <div id="head-to-head-history" class="head-to-head-history" aria-label="Prior match results"></div>
+    </div>
+    <div id="overlay-error" class="overlay-error" role="alert"></div>
+  </main>
+  <script>
+    const preMatchOverlay = document.getElementById("pre-match-overlay");
+    const overlayError = document.getElementById("overlay-error");
+    let hideTimer = null;
+    let lastBoutKey = null;
+    let lastTimerKey = null;
+    let lastPinned = null;
+
+    function placeOverlay(bounds, canvas) {
+      preMatchOverlay.style.left = `${bounds.x / canvas.width * 100}%`;
+      preMatchOverlay.style.top = `${bounds.y / canvas.height * 100}%`;
+      preMatchOverlay.style.width = `${bounds.width / canvas.width * 100}%`;
+      preMatchOverlay.style.height = `${bounds.height / canvas.height * 100}%`;
+    }
+
+    function updateOverlayPosition(state) {
+      if (state.settings && state.settings.overlay) {
+        placeOverlay(state.settings.overlay.pre_match, state.settings.overlay.canvas);
+      }
+    }
+
+    function recordText(record) {
+      return record ? `${record.wins}-${record.losses}` : "Record unavailable";
+    }
+
+    function renderBout(state, suppressAutoShow = false) {
+      if (!state.settings || !state.settings.overlay) return;
+      updateOverlayPosition(state);
+      document.getElementById("division").textContent = state.division || state.settings.division;
+      document.getElementById("division-number").textContent =
+        `(Division ${state.divisionNumber})`;
+      document.getElementById("bout-number").textContent =
+        `Bout ${state.divisionBoutNumber} out of ${state.divisionTotal}`;
+      const nextStage = document.getElementById("bouts-until-next-stage");
+      if (state.boutsUntilNextStage === null || state.boutsUntilNextStage === undefined) {
+        nextStage.textContent = "";
+      } else {
+        const target = state.divisionNumber === 1 ? "Sanyaku" : "next division";
+        const boutWord = state.boutsUntilNextStage === 1 ? "bout" : "bouts";
+        nextStage.textContent = `${state.boutsUntilNextStage} ${boutWord} until ${target}`;
+      }
+      document.getElementById("east-name").textContent = state.east.name;
+      document.getElementById("west-name").textContent = state.west.name;
+      document.getElementById("east-rank").textContent = state.east.rank || "Rank unavailable";
+      document.getElementById("west-rank").textContent = state.west.rank || "Rank unavailable";
+      document.getElementById("east-record").textContent = recordText(state.east.record);
+      document.getElementById("west-record").textContent = recordText(state.west.record);
+
+      const h2h = state.headToHead;
+      const h2hScore = document.getElementById("head-to-head-score");
+      const h2hHistory = document.getElementById("head-to-head-history");
+      h2hScore.textContent = h2h
+        ? `Head to Head: ${h2h.eastWins} - ${h2h.westWins}`
+        : "Head to Head: unavailable";
+      h2hHistory.replaceChildren();
+      if (h2h && Array.isArray(h2h.history)) {
+        h2h.history.forEach((winner, index) => {
+          if (winner !== "east" && winner !== "west") return;
+          const marker = document.createElement("span");
+          marker.className = `head-to-head-result ${winner}`;
+          marker.textContent = winner === "east" ? "←" : "→";
+          marker.title = winner === "east" ? "Left wrestler won" : "Right wrestler won";
+          marker.setAttribute("aria-label", `Bout ${index + 1}: ${marker.title}`);
+          h2hHistory.appendChild(marker);
+        });
+      }
+      overlayError.textContent = "";
+      if (hideTimer !== null) window.clearTimeout(hideTimer);
+      hideTimer = null;
+      if (state.settings.preMatchPinned) {
+        preMatchOverlay.hidden = false;
+        return;
+      }
+      if (suppressAutoShow) {
+        preMatchOverlay.hidden = true;
+        return;
+      }
+      const seconds = Math.max(0, state.settings.preMatchSeconds);
+      if (!state.settings.preMatchEnabled || seconds === 0) {
+        preMatchOverlay.hidden = true;
+        return;
+      }
+      preMatchOverlay.hidden = false;
+      hideTimer = window.setTimeout(() => {
+        preMatchOverlay.hidden = true;
+        hideTimer = null;
+      }, seconds * 1000);
+    }
+
+    function receiveBout(state) {
+      updateOverlayPosition(state);
+      const boutKey = [
+        state.settings && state.settings.bashoId,
+        state.settings && state.settings.day,
+        state.division,
+        state.matchNo,
+        state.east.rikishiId,
+        state.west.rikishiId
+      ].join(":");
+      const timerKey = [
+        state.settings && state.settings.preMatchEnabled,
+        state.settings && state.settings.preMatchSeconds,
+        state.settings && state.settings.preMatchPinned
+      ].join(":");
+      if (boutKey !== lastBoutKey || timerKey !== lastTimerKey) {
+        const pinned = Boolean(state.settings && state.settings.preMatchPinned);
+        const justUnpinned = lastPinned === true && !pinned;
+        lastBoutKey = boutKey;
+        lastTimerKey = timerKey;
+        lastPinned = pinned;
+        renderBout(state, justUnpinned);
+      }
+    }
+
+    function showError(message) {
+      console.error(message);
+      preMatchOverlay.hidden = true;
+    }
+
+    fetch("/api/pre-match-state")
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Unable to load pre-match state");
+        receiveBout(payload);
+      })
+      .catch(error => showError(error.message));
+
+    if (typeof io === "function") {
+      const socket = io();
+      socket.on("bout_update", updateOverlayPosition);
+      socket.on("pre_match_update", receiveBout);
+      socket.on("pre_match_error", payload => showError(payload.error));
+      socket.on("connect_error", error => showError(`Overlay connection failed: ${error.message}`));
+    } else {
+      window.setInterval(() => {
+        fetch("/api/pre-match-state")
+          .then(async response => {
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || "Unable to load pre-match state");
+            receiveBout(payload);
+          })
+          .catch(error => showError(error.message));
+      }, 1000);
+    }
+  </script>
+</body>
+</html>

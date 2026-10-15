@@ -1,9 +1,12 @@
+import json
+import time
 from dataclasses import dataclass
 
 import pytest
 
 from app import create_app
-from sumo_data import Bout, BoutRecord, BoutSide, SumoApiError
+from config import SettingsError, default_settings, validate_settings
+from sumo_data import DIVISION_ORDER, Bout, BoutRecord, BoutSide, SumoApiError
 
 
 def make_bout(match_no, east, west):
@@ -20,6 +23,7 @@ class FakeSchedule:
     fail_refresh: bool = False
     refresh_count: int = 0
     kanji_lookup: dict[str, str] | None = None
+    h2h: dict[str, int] | None = None
 
     def refresh(self):
         self.refresh_count += 1
@@ -27,10 +31,13 @@ class FakeSchedule:
             raise SumoApiError("API unavailable")
         return self.bouts
 
+    def head_to_head(self, bout):
+        return self.h2h or {"eastWins": 0, "westWins": 0, "total": 0, "history": []}
+
 
 def test_manual_controls_update_state_and_emit_websocket_event():
     schedule = FakeSchedule([make_bout(1, 10, 11), make_bout(2, 12, 13)])
-    app = create_app(schedule=schedule, config={"TESTING": True})
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
     client = app.test_client()
     socket_client = app.extensions["socketio"].test_client(app)
     socket_client.get_received()
@@ -48,7 +55,7 @@ def test_manual_controls_update_state_and_emit_websocket_event():
 
 def test_failed_refresh_keeps_state_and_returns_explicit_error():
     schedule = FakeSchedule([make_bout(1, 10, 11), make_bout(2, 12, 13)], fail_refresh=True)
-    app = create_app(schedule=schedule, config={"TESTING": True})
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
     client = app.test_client()
 
     response = client.post("/api/control/next")
@@ -60,7 +67,7 @@ def test_failed_refresh_keeps_state_and_returns_explicit_error():
 
 def test_socket_control_surfaces_refresh_error():
     schedule = FakeSchedule([make_bout(1, 10, 11), make_bout(2, 12, 13)], fail_refresh=True)
-    app = create_app(schedule=schedule, config={"TESTING": True})
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
     socket_client = app.extensions["socketio"].test_client(app)
     socket_client.get_received()
 
@@ -74,14 +81,360 @@ def test_socket_control_surfaces_refresh_error():
 
 def test_pages_and_kanji_lookup_are_available():
     schedule = FakeSchedule([make_bout(1, 10, 11)], kanji_lookup={"栃大海": "Tochitaikai"})
-    app = create_app(schedule=schedule, config={"TESTING": True})
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
     client = app.test_client()
 
     assert client.get("/overlay").status_code == 200
+    assert client.get("/pre-match-overlay").status_code == 200
+    main_overlay = client.get("/main-overlay")
+    assert main_overlay.status_code == 200
+    assert 'Makuuchi: 1' in main_overlay.text
+    assert "return number ? `Div ${number}` : \"Division\";" in main_overlay.text
     assert client.get("/control").status_code == 200
     assert client.get("/api/lookup").json == {"栃大海": "Tochitaikai"}
+    assert client.get("/api/state").json["headToHead"] is None
 
 
-def test_invalid_basho_configuration_fails_before_startup():
-    with pytest.raises(ValueError, match="SUMO_BASHO"):
-        create_app(config={"SUMO_BASHO": "invalid"})
+def test_head_to_head_is_served_by_the_pre_match_state_route():
+    schedule = FakeSchedule(
+        [make_bout(1, 10, 11)],
+        h2h={"eastWins": 3, "westWins": 2, "total": 5, "history": []},
+    )
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+    client = app.test_client()
+
+    assert client.get("/api/state").json["headToHead"] is None
+    assert client.get("/api/pre-match-state").json["headToHead"] == {
+        "eastWins": 3,
+        "westWins": 2,
+        "total": 5,
+        "history": [],
+    }
+
+
+def test_pre_match_state_counts_division_bouts_and_sanyaku_transition():
+    jonokuchi_1 = make_bout(1, 10, 11)
+    jonokuchi_1 = Bout(
+        jonokuchi_1.match_no,
+        jonokuchi_1.east,
+        jonokuchi_1.west,
+        "Jonokuchi",
+    )
+    jonokuchi_2 = Bout(2, jonokuchi_1.east, jonokuchi_1.west, "Jonokuchi")
+    jonidan = Bout(1, jonokuchi_1.east, jonokuchi_1.west, "Jonidan")
+    maegashira = Bout(
+        1,
+        BoutSide(20, "East 20", "Maegashira 1 East", BoutRecord(0, 0)),
+        BoutSide(21, "West 21", "Maegashira 2 West", BoutRecord(0, 0)),
+        "Makuuchi",
+    )
+    ozeki = Bout(
+        2,
+        BoutSide(22, "East 22", "Ozeki 1 East", BoutRecord(0, 0)),
+        BoutSide(23, "West 23", "Maegashira 1 West", BoutRecord(0, 0)),
+        "Makuuchi",
+    )
+    schedule = FakeSchedule([jonokuchi_1, jonokuchi_2, jonidan, maegashira, ozeki])
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+    controller = app.extensions["bout_controller"]
+
+    first = controller.state()
+    assert first["divisionNumber"] == 6
+    assert first["divisionBoutNumber"] == 1
+    assert first["divisionTotal"] == 2
+    assert first["boutsUntilNextStage"] == 2
+
+    controller.move(3)
+    before_sanyaku = controller.state()
+    assert before_sanyaku["divisionNumber"] == 1
+    assert before_sanyaku["divisionBoutNumber"] == 1
+    assert before_sanyaku["boutsUntilNextStage"] == 1
+
+    controller.move(1)
+    sanyaku = controller.state()
+    assert sanyaku["boutsUntilNextStage"] is None
+
+
+def test_division_setting_accepts_numbers_and_normalizes_legacy_names():
+    settings = default_settings()
+    assert settings["division"] == 0
+    settings["division"] = "all"
+    assert validate_settings(settings)["division"] == 0
+
+    settings["division"] = 1
+    assert validate_settings(settings)["division"] == 1
+
+    settings["division"] = "Jonokuchi"
+    assert validate_settings(settings)["division"] == 6
+
+    settings["division"] = 7
+    with pytest.raises(SettingsError, match="division must"):
+        validate_settings(settings)
+
+
+def test_numeric_division_is_converted_to_api_division_name(tmp_path, monkeypatch):
+    settings = default_settings()
+    settings["division"] = 3
+    settings_path = tmp_path / "config.json"
+    write_config(settings_path, settings)
+    calls = []
+
+    class CapturedSchedule:
+        def __init__(self, client, basho_id, division, day):
+            calls.append((basho_id, division, day))
+            self.bouts = [make_bout(1, 10, 11)]
+
+    monkeypatch.setattr("app.SumoApiClient", lambda **kwargs: object())
+    monkeypatch.setattr("app.BashoSchedule", CapturedSchedule)
+
+    create_app(config_path=settings_path, watch_config=False)
+
+    assert calls == [("202505", "Makushita", 1)]
+
+
+def test_division_jump_moves_to_first_bout_in_requested_division():
+    bouts = []
+    for index, division in enumerate(DIVISION_ORDER, start=1):
+        bout = make_bout(index, index * 2, index * 2 + 1)
+        bouts.append(Bout(index, bout.east, bout.west, division))
+    app = create_app(
+        schedule=FakeSchedule(bouts),
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    client = app.test_client()
+
+    response = client.post("/api/control/division", json={"division": 3})
+
+    assert response.status_code == 200
+    assert response.json["division"] == "Makushita"
+    assert response.json["divisionNumber"] == 3
+    assert response.json["index"] == DIVISION_ORDER.index("Makushita")
+
+
+def test_division_jump_rejects_invalid_or_unloaded_division():
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    client = app.test_client()
+
+    assert client.post("/api/control/division", json={"division": 0}).status_code == 400
+    missing_division = client.post("/api/control/division", json={"division": 6})
+    assert missing_division.status_code == 404
+
+
+def write_config(path, settings):
+    path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+
+
+def test_control_mode_is_persisted_to_json_config(tmp_path):
+    settings_path = tmp_path / "config.json"
+    settings = default_settings()
+    settings["server"]["watch_interval_seconds"] = 0.1
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+
+    try:
+        response = app.test_client().post("/api/control/mode", json={"mode": "automated"})
+        saved_settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert response.status_code == 200
+        assert response.json["settings"]["mode"] == "automated"
+        assert response.json["settings"]["preMatchEnabled"] is True
+        assert response.json["settings"]["preMatchSeconds"] == 10
+        assert saved_settings["control"]["mode"] == "automated"
+        assert "pre_match_enabled" not in saved_settings["control"]
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_external_json_edit_hot_reloads_overlay_settings(tmp_path):
+    settings_path = tmp_path / "config.json"
+    settings = default_settings()
+    settings["server"]["watch_interval_seconds"] = 0.05
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+    client = app.test_client()
+
+    try:
+        settings["control"]["mode"] = "automated"
+        settings["overlay"]["main"]["x"] = 80
+        settings["overlay"]["pre_match"]["y"] = 50
+        settings["capture_regions"]["abema_scoresheet"]["x"] = 120
+        write_config(settings_path, settings)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            response = client.get("/api/settings").json
+            if (
+                response["settings"]["control"]["mode"] == "automated"
+                and response["settings"]["overlay"]["main"]["x"] == 80
+            ):
+                break
+            time.sleep(0.05)
+        assert response["settings"]["control"]["mode"] == "automated"
+        assert client.get("/api/state").json["settings"]["overlay"]["main"]["x"] == 80
+        assert client.get("/api/pre-match-state").json["settings"]["overlay"]["pre_match"]["y"] == 50
+        assert client.get("/api/settings").json["settings"]["capture_regions"][
+            "abema_scoresheet"
+        ]["x"] == 120
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_invalid_hot_reload_keeps_last_good_configuration(tmp_path):
+    settings_path = tmp_path / "config.json"
+    settings = default_settings()
+    settings["server"]["watch_interval_seconds"] = 0.05
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+    client = app.test_client()
+
+    try:
+        settings["control"]["mode"] = "not-a-mode"
+        write_config(settings_path, settings)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            response = client.get("/api/settings").json
+            if response["reloadError"]:
+                break
+            time.sleep(0.05)
+        assert response["reloadError"]
+        assert response["settings"]["control"]["mode"] == "manual"
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_pre_match_toggle_is_independent_of_match_control_mode(tmp_path):
+    settings_path = tmp_path / "config.json"
+    settings = default_settings()
+    settings["control"]["mode"] = "automated"
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+
+    try:
+        response = app.test_client().post(
+            "/api/control/pre-match",
+            json={"seconds": 0},
+        )
+        saved_settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert response.status_code == 200
+        assert response.json["settings"]["mode"] == "automated"
+        assert response.json["settings"]["preMatchEnabled"] is False
+        assert saved_settings["control"]["mode"] == "automated"
+        assert saved_settings["control"]["pre_match_seconds"] == 0
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_pre_match_pin_keeps_overlay_visible_until_unpinned(tmp_path):
+    settings_path = tmp_path / "config.json"
+    settings = default_settings()
+    settings["control"]["pre_match_seconds"] = 0
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+
+    try:
+        client = app.test_client()
+        pinned = client.post("/api/control/pre-match", json={"pinned": True})
+        assert pinned.status_code == 200
+        assert pinned.json["settings"]["preMatchEnabled"] is False
+        assert pinned.json["settings"]["preMatchPinned"] is True
+        saved_settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert saved_settings["control"]["pre_match_pinned"] is True
+
+        unpinned = client.post("/api/control/pre-match", json={"pinned": False})
+        assert unpinned.status_code == 200
+        assert unpinned.json["settings"]["preMatchPinned"] is False
+        assert unpinned.json["settings"]["preMatchEnabled"] is False
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_zero_pre_match_duration_turns_overlay_off_and_positive_value_enables_it(tmp_path):
+    settings_path = tmp_path / "config.json"
+    settings = default_settings()
+    settings["control"]["mode"] = "manual"
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+
+    try:
+        client = app.test_client()
+        off = client.post("/api/control/pre-match", json={"seconds": 0})
+        assert off.status_code == 200
+        assert off.json["settings"]["mode"] == "manual"
+        assert off.json["settings"]["preMatchSeconds"] == 0
+        assert off.json["settings"]["preMatchEnabled"] is False
+
+        on = client.post("/api/control/pre-match", json={"seconds": 8})
+        assert on.status_code == 200
+        assert on.json["settings"]["mode"] == "manual"
+        assert on.json["settings"]["preMatchSeconds"] == 8
+        assert on.json["settings"]["preMatchEnabled"] is True
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_invalid_pre_match_control_settings_are_rejected(tmp_path):
+    settings_path = tmp_path / "config.json"
+    settings = default_settings()
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+
+    try:
+        client = app.test_client()
+        assert client.post("/api/control/pre-match", json={"enabled": "off"}).status_code == 400
+        assert client.post("/api/control/pre-match", json={"pinned": "yes"}).status_code == 400
+        assert client.post("/api/control/pre-match", json={"seconds": -1}).status_code == 400
+        assert client.post("/api/control/pre-match", json={}).status_code == 400
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_invalid_json_config_is_rejected(tmp_path):
+    settings_path = tmp_path / "config.json"
+    settings = default_settings()
+    settings["control"]["mode"] = "invalid"
+    write_config(settings_path, settings)
+
+    with pytest.raises(ValueError, match="control.mode"):
+        create_app(
+            schedule=FakeSchedule([make_bout(1, 10, 11)]),
+            config_path=settings_path,
+            watch_config=False,
+        )

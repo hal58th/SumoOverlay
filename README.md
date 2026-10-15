@@ -1,246 +1,210 @@
 # Sumo Broadcast Overlay
 
-This program downloads one day's sumo bout list from [sumo-api.com](https://sumo-api.com), lets you move between bouts with Previous/Next buttons, and shows English wrestler names, ranks, and pre-bout records in a transparent OBS overlay.
+This program downloads a basho's bout lists from [sumo-api.com](https://sumo-api.com), lets you move between bouts with a control page, and displays two OBS browser overlays:
 
-You do **not** need to know Python to follow these setup steps. Pick **one** way to run the program:
+1. **Main overlay** — a compact, persistent strip in the top-left with the current division, wrestler names, their records before this bout, and abbreviated ranks.
+2. **Pre-match overlay** — a larger matchup card with ranks, pre-bout records, and head-to-head (H2H) wins. When enabled, it appears after a bout is selected and hides after the configured number of seconds. This timer works the same in manual and automated modes; set the duration to `0` or use the Control page toggle to turn it off.
 
-- **Windows PowerShell (recommended if you use OBS on Windows):** The app and OBS run on the same Windows machine.
-- **AlmaLinux 9 in WSL:** Use this if you specifically want to run the app inside WSL. WSL is a Linux environment running alongside Windows. Its Python and installed packages are separate from Windows Python.
+Settings are read from `config.json`; the program does not use environment variables. The app watches that file and reloads valid changes while it is running. OCR/screen capture and automatic match detection are not implemented yet. “Automated” is reserved for future OCR-driven bout advancement; until then, bout selection uses the Previous/Next buttons in either mode.
 
-OCR/screen capture, H2H statistics, and the timed H2H-to-lower-third transition are not included in this prototype.
-
-## What you need
+## Requirements
 
 - Python 3.10 or newer.
-- An internet connection to download the Python packages and fetch sumo-api.com data.
-- OBS Studio, if you want to stream the overlay.
-- This project folder on your computer. The examples below assume it is `C:\SumoOverlay` in Windows, which is `/mnt/c/SumoOverlay` from WSL. If yours is somewhere else, use its actual location in the `cd` command.
+- An internet connection to install packages and fetch data from sumo-api.com.
+- OBS Studio, if you want to stream the overlays.
+- This project folder. The examples assume it is `C:\SumoOverlay` in Windows, or `/mnt/c/SumoOverlay` from WSL.
 
 The app uses CPU-only Python packages; EasyOCR, PyTorch, and a GPU are not required.
 
-## Option 1: Windows PowerShell
+## Configure the app
 
-### 1. Open PowerShell in the project folder
+Open `config.json` in a text editor and change the values you need. Keep the braces, commas, quotation marks, and key names as shown: the file must remain valid JSON. The included values are an example basho; change `basho_id` and `day` to the tournament/day you want.
 
-Open the Windows Start menu, type **PowerShell**, and open **Windows PowerShell** or **Terminal**. Enter:
+| Setting | Purpose |
+|---|---|
+| `basho_id` | Six-digit basho ID in `YYYYMM` format, such as `"202505"`. |
+| `division` | `0` loads all divisions (recommended); `1` Makuuchi, `2` Juryo, `3` Makushita, `4` Sandanme, `5` Jonidan, `6` Jonokuchi. |
+| `day` | Tournament day, from `1` through `15`. |
+| `api.base_url` | sumo-api.com API root. |
+| `api.timeout_seconds` | Maximum wait for an API request. |
+| `server.host`, `server.port` | Local web-server address and port. Keep the host set to `127.0.0.1` unless you know why it needs to change. |
+| `server.watch_interval_seconds` | How often, in seconds, the app checks `config.json` for edits. |
+| `control.mode` | `"manual"` or `"automated"`. This selects how bouts will be controlled when OCR match detection is implemented; it does not change pre-match overlay behavior today. |
+| `control.pre_match_seconds` | How long, in seconds, the pre-match overlay appears after a bout change. `0` disables timed auto-show. |
+| `control.pre_match_pinned` | `true` or `false`. When true, keeps the pre-match overlay visible until you hide it from the Control page. |
+| `overlay.canvas` | The OBS browser-source design width and height, in pixels. |
+| `overlay.main` | Main overlay rectangle: top-left `x`, `y`, `width`, and `height`, in pixels on the canvas. It centers each wrestler's name over their rank and record (shown side by side); division and “VS” are in the middle. |
+| `overlay.pre_match` | Pre-match overlay rectangle, using the same pixel coordinate system. The default covers almost the full canvas. |
+| `capture_regions.abema_scoresheet` | Rectangle around the ABEMA scoresheet, in desktop screen pixels. Reserved for the future OCR reader; OCR does not currently use it. |
+
+Both overlay rectangles must fit within `overlay.canvas`. Capture-region coordinates refer to the desktop/video capture area, not the OBS overlay canvas. If ABEMA moves its scoresheet, update the capture rectangle to match the new screen location. The main and pre-match overlay rectangles can be adjusted separately. The default pre-match rectangle is almost full screen; the card background is 50% opaque so the broadcast remains visible behind it while the text stays fully readable.
+
+`division: 0` loads all divisions by requesting each of the six supported divisions separately; the API does not provide a working all-divisions endpoint. Bouts are combined in broadcast order. Values 1 through 6 select one division; number 1 is the top division (Makuuchi) and number 6 is Jonokuchi. For compatibility, existing configuration files using `"all"` or division names are still accepted; use the numeric values in new or edited settings.
+
+When you save a valid JSON file, the app applies changes within the configured watch interval. A change to the basho, division, or day reloads its bout data and selects the first bout. Invalid JSON/settings or unavailable API data leave the last working settings active; the Control page reports a reload error. Fix the file and save again. Changing `server.host` or `server.port` requires restarting the app because the listening socket cannot be rebound while running.
+
+## Install and run on Windows PowerShell
+
+These instructions are recommended when OBS is running on Windows.
+
+### 1. Open the project folder
+
+Open PowerShell from the Windows Start menu and enter:
 
 ```powershell
 cd C:\SumoOverlay
 ```
 
-If PowerShell says it cannot find that folder, change the command to the folder where you saved this project. The project folder should contain `app.py` and `pyproject.toml`. You can check by entering:
+If the project is somewhere else, replace the path. `Get-ChildItem` should show `app.py`, `config.json`, and `pyproject.toml`.
 
-```powershell
-Get-ChildItem
-```
+### 2. Create a Python environment for this app
 
-### 2. Check Python and create a private environment for this app
-
-On Windows, the command `python` can point to a Microsoft Store shortcut even when Python is installed. Use the Python Launcher command `py` instead:
+The Windows `python` command may be redirected to the Microsoft Store even when Python is installed. Use the Python Launcher, `py`, to find Python:
 
 ```powershell
 py --version
 py -0p
 ```
 
-The first command prints the launcher's Python version. The second lists the Python versions installed on your computer. Choose any listed version that is 3.10 or newer. For example, if the list includes Python 3.11, create the app's environment like this:
+Choose an installed Python version that is 3.10 or newer. For example, if Python 3.11 is listed, run:
 
 ```powershell
 py -3.11 -m venv .venv
 ```
 
-If your installed version is different, replace `3.11` with that version (for example, use `py -3.12` for Python 3.12). If `.venv` already exists, you can skip this creation command.
+Replace `3.11` with your installed version if it is different. You only need to create `.venv` once. If it already exists, skip this command.
 
-### 3. Install the app and its packages
-
-Run these commands in the project folder:
+### 3. Install the app
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-This installs Flask and the other required packages into this project's `.venv` folder only. It does not change the rest of your computer. Use the `.venv` Python for both installing and running the app; typing `python` by itself might select a different Python installation.
+Use the `.venv` Python shown in these commands to install and run the app. It installs Flask and the other app packages just for this project.
 
-### 4. Choose the tournament and start the app
+### 4. Start the app
 
-Set the tournament month, division, and day in the same PowerShell window:
+Make any changes to `config.json`, then run:
 
 ```powershell
-$env:SUMO_BASHO = "202609"
-$env:SUMO_DIVISION = "Makuuchi"
-$env:SUMO_DAY = "1"
 .\.venv\Scripts\python.exe app.py
 ```
 
-Change `202505` to the six-digit tournament ID (`YYYYMM`), and change the day to a number from `1` to `15`. The division must be one of `Makuuchi`, `Juryo`, `Makushita`, `Sandanme`, `Jonidan`, or `Jonokuchi`. The values above are an example. Keep the PowerShell window open while using the overlay; closing it stops the app. To stop the app, click the PowerShell window and press **Ctrl+C**.
+Keep the PowerShell window open while using the overlays. Press **Ctrl+C** in that window to stop the app.
 
-Open these addresses in your Windows browser:
+If PowerShell says `python` is not installed, use `py` and `.\.venv\Scripts\python.exe` as shown above; the standalone `python` command is not needed. If `py` is also not recognized, turn off the `python.exe` and `python3.exe` App Installer aliases under **Settings → Apps → Advanced app settings → App execution aliases**, reopen PowerShell, and try again. If Python is not installed, install Python 3.11 or newer from [python.org](https://www.python.org/downloads/windows/), selecting **Add python.exe to PATH** and the Python Launcher if offered.
 
-- Bout controls: <http://127.0.0.1:5000/control>
-- OBS overlay: <http://127.0.0.1:5000/overlay>
-- Kanji-to-English lookup: <http://127.0.0.1:5000/api/lookup>
+## Install and run on AlmaLinux 9 in WSL
 
-### If PowerShell says Python is not installed
+WSL is a Linux environment that runs alongside Windows. It has its own Linux Python and packages, separate from Windows. For the simplest OBS setup, Windows PowerShell is recommended; use these instructions if you want the app to run inside WSL.
 
-First try the `py` commands above. The project does not require the command to be named `python`.
+### 1. Open AlmaLinux and find the project
 
-If `py --version` works, but `python --version` opens the Microsoft Store or says Python is missing, keep using `py` to create `.venv` and the explicit `.\.venv\Scripts\python.exe` commands to install and run the app. You do not need to repair the `python` command.
-
-If PowerShell says that `.\.venv\Scripts\python.exe` cannot be found, check that you are in the project folder with `Get-ChildItem`, then run the `py -3.11 -m venv .venv` command from step 2. Use the version number you actually have installed.
-
-If `py` is also not recognized:
-
-1. Open **Settings → Apps → Advanced app settings → App execution aliases**. If `python.exe` and `python3.exe` are enabled as App Installer aliases, turn those aliases off. This stops Windows from redirecting the `python` command to the Store.
-2. Close PowerShell, open it again, and retry `py --version`.
-3. If `py` is still unavailable, repair or install Python 3.11 or newer using the installer from [python.org](https://www.python.org/downloads/windows/). In the installer, select **Add python.exe to PATH** and, if offered, the Python Launcher. Close and reopen PowerShell after installation.
-
-If `py -0p` lists several versions, use one that is 3.10 or newer when creating `.venv`; for example, `py -3.11 -m venv .venv`.
-
-## Option 2: AlmaLinux 9 in WSL
-
-### 1. Open AlmaLinux in WSL and go to the project
-
-Open the **AlmaLinux 9** app from the Windows Start menu. You are now typing Linux commands, not PowerShell commands. If the project is in `C:\SumoOverlay`, enter:
+Open **AlmaLinux 9** from the Windows Start menu. If the project is in `C:\SumoOverlay`, its WSL path is `/mnt/c/SumoOverlay`:
 
 ```bash
 cd /mnt/c/SumoOverlay
-```
-
-If your project is on another Windows drive, WSL mounts the drive under `/mnt` using a lowercase letter. For example, `D:\Projects\SumoOverlay` becomes `/mnt/d/Projects/SumoOverlay`.
-
-Check that you are in the right place:
-
-```bash
-pwd
 ls
 ```
 
-The file list should include `app.py` and `pyproject.toml`.
+The files should include `app.py`, `config.json`, and `pyproject.toml`. If the project is on another Windows drive, use `/mnt/<lowercase-drive-letter>/...`; for example `D:\Projects\SumoOverlay` is `/mnt/d/Projects/SumoOverlay`.
 
-### 2. Install Python 3.11 and create a WSL-only environment
-
-In the AlmaLinux terminal, install Python 3.11 and its pip package manager:
+### 2. Install Python and make a WSL-only environment
 
 ```bash
 sudo dnf install -y python3.11 python3.11-pip
-```
-
-Enter your Linux password if asked. Linux does not show characters while you type a password; type it and press **Enter**.
-
-Create an environment in your Linux home folder, separate from any Windows `.venv`:
-
-```bash
 mkdir -p "$HOME/.venvs"
 python3.11 -m venv "$HOME/.venvs/sumo-overlay"
 source "$HOME/.venvs/sumo-overlay/bin/activate"
 ```
 
-When it is active, your command prompt usually starts with `(sumo-overlay)`. Activating it tells Linux which Python to use.
+If Linux asks for your password, type it and press **Enter**. It will not show characters as you type. When the environment is active, the command prompt usually begins with `(sumo-overlay)`.
 
-### 3. Install the app and its packages inside WSL
+### 3. Install and start the app
 
-Make sure you are still in the project folder, then run:
+From the project folder, install the app and run it:
 
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -e .
-```
-
-These commands install Flask and the other packages into the WSL environment you just created. Windows and WSL do not share Python installations or installed packages. Installing Flask in Windows will not install it in WSL, and installing it in WSL will not install it in Windows.
-
-### 4. Choose the tournament and start the app
-
-In the same AlmaLinux terminal, set the tournament and start the program:
-
-```bash
-export SUMO_BASHO="202609"
-export SUMO_DIVISION="Makuuchi"
-export SUMO_DAY="1"
 python app.py
 ```
 
-Change `202505` to the six-digit tournament ID (`YYYYMM`), and change the day to a number from `1` to `15`. The division must be one of `Makuuchi`, `Juryo`, `Makushita`, `Sandanme`, `Jonidan`, or `Jonokuchi`. The values above are an example. Keep the terminal open while using the overlay; closing it stops the app. To stop the app, click the terminal and press **Ctrl+C**.
+Keep this terminal open while using the overlays. Press **Ctrl+C** to stop the app. After opening a new AlmaLinux terminal, run `cd /mnt/c/SumoOverlay` and `source "$HOME/.venvs/sumo-overlay/bin/activate"` again before starting the app. You do not need to reinstall packages.
 
-On a standard WSL 2 setup, Windows can open the app at:
-
-- Bout controls: <http://localhost:5000/control>
-- OBS overlay: <http://localhost:5000/overlay>
-- Kanji-to-English lookup: <http://localhost:5000/api/lookup>
-
-The `source .../activate` command only affects the current Linux terminal. If you close it and open another one, repeat the `cd`, `source`, and `export` commands before starting the app again. The environment and installed packages remain on disk; you do not need to reinstall them.
-
-### If WSL says `No module named 'flask'`
-
-This means the app is running with a Python environment that does not have the app's packages installed. In the **AlmaLinux terminal**:
-
-1. Go to the project folder, for example `cd /mnt/c/SumoOverlay`.
-2. Activate the WSL environment:
-
-   ```bash
-   source "$HOME/.venvs/sumo-overlay/bin/activate"
-   ```
-
-3. Install the app's packages in that environment:
-
-   ```bash
-   python -m pip install -e .
-   ```
-
-4. Start it from that same terminal with `python app.py`.
-
-If DNF reports that it cannot find the Python packages, refresh its package list and try again:
+If you see `No module named 'flask'`, activate the WSL environment and install the app packages in that same terminal:
 
 ```bash
-sudo dnf makecache
-sudo dnf install -y python3.11 python3.11-pip
+cd /mnt/c/SumoOverlay
+source "$HOME/.venvs/sumo-overlay/bin/activate"
+python -m pip install -e .
+python app.py
 ```
 
-If the packages are still unavailable, check that this terminal is AlmaLinux 9 and that its software repositories are enabled before continuing. Do not substitute an older system `python3` unless `python3 --version` reports 3.10 or newer. Do not use `sudo pip install flask`: that installs packages into a system Python and can leave the app using a different Python than the one you installed into.
+Do not use `sudo pip install flask`: it installs into the system Python, which may not be the Python running this app. If `python3.11` is unavailable, refresh AlmaLinux's package list with `sudo dnf makecache`, then retry `sudo dnf install -y python3.11 python3.11-pip`. Check that AlmaLinux 9 software repositories are enabled if DNF still cannot find the packages.
 
-To check which Python is active, activate the environment and run:
+With WSL 2 localhost forwarding enabled, Windows can open the app at `http://localhost:5000`. If Windows OBS cannot connect to the WSL server, use the Windows PowerShell setup above.
 
-```bash
-which python
-python -m pip show Flask
-```
+## Control page and addresses
 
-The Python path should start with your home directory and end in `.venvs/sumo-overlay/bin/python`. If `pip show Flask` says the package was not found, install the project packages again with `python -m pip install -e .` while that environment is active.
+With the app running, open:
 
-If Windows cannot open `http://localhost:5000` while the server is running in WSL, use the Windows PowerShell setup above (recommended when OBS is on Windows), or check that your WSL installation is using WSL 2 and localhost forwarding is enabled. This app intentionally listens only on the local machine; do not expose it to your network by changing it to listen on all interfaces.
+- Control page: <http://127.0.0.1:5000/control> (WSL: <http://localhost:5000/control>)
+- Main overlay: <http://127.0.0.1:5000/main-overlay> (WSL: <http://localhost:5000/main-overlay>)
+- Pre-match overlay: <http://127.0.0.1:5000/overlay> (WSL: <http://localhost:5000/overlay>)
+- Current bout JSON: <http://127.0.0.1:5000/api/state>
+- Pre-match and H2H JSON: <http://127.0.0.1:5000/api/pre-match-state>
+- Kanji-to-English lookup: <http://127.0.0.1:5000/api/lookup>
+- Effective settings/reload status: <http://127.0.0.1:5000/api/settings>
+
+Use **Previous Bout** and **Next Bout** for replay or manual synchronization. Enter a division number from 1 (Makuuchi) to 6 (Jonokuchi) and choose **Go to division** to jump to that division's first scheduled bout. This requires `division: 0` so all six divisions are loaded. The match-control toggle selects manual or automated control; automated bout detection will be wired to OCR in a future change.
+
+Use **Auto-show duration** and **Save duration** to set how long the pre-match card appears after a bout change. Set it to `0` to disable timed auto-show. **Show pre-match until I turn it off** pins the card on-screen until you press **Hide pre-match now**; this manual display remains available even when timed auto-show is disabled. These settings are saved in `config.json`.
 
 ## OBS Studio
 
-1. Start the app using either Windows or WSL, and open the Control page to check the bout.
-2. In OBS, add a **Browser** source.
-3. Set the URL to `http://127.0.0.1:5000/overlay` if the app is running in Windows, or `http://localhost:5000/overlay` if it is running in WSL.
-4. Set the width to `1920` and height to `1080`.
-5. Use **Previous Bout** and **Next Bout** on the Control page to sync a replay.
+In OBS, add two **Browser** sources and set each source's size to the `overlay.canvas` width and height in `config.json` (the included values are 1920 × 1080):
 
-The overlay background is transparent. The page connects to the local app for bout updates; it falls back to local state polling if its Socket.IO browser library cannot load.
+1. Main, always-on wrestler strip: `http://127.0.0.1:5000/main-overlay` (or `http://localhost:5000/main-overlay` when running in WSL).
+2. Pre-match H2H card: `http://127.0.0.1:5000/overlay` (or `http://localhost:5000/overlay` when running in WSL).
 
-## Records and replay spoilers
+In OBS, select the Browser source and drag it on the preview canvas, or right-click it and choose **Transform → Edit Transform** to set its position and size. This positions the whole transparent browser canvas; `overlay.main` and `overlay.pre_match` in `config.json` position their content inside that canvas.
 
-sumo-api.com's bout-card response includes bout results, not a guaranteed pre-bout record. The app calculates each wrestler's record using completed bouts on earlier days and earlier bouts on the selected day. It does not send the selected bout's winner or winning technique to the overlay. If an earlier result is missing or unresolved, the app shows that record as unavailable instead of guessing and risking a spoiler.
+Both pages have transparent backgrounds and update live. The main strip remains visible. When timed auto-show is enabled with a positive duration, the pre-match card appears after every bout change and hides when the timer expires, regardless of match-control mode. You can also pin it on from the Control page until you hide it; this manual display takes precedence over the timer. The pre-match page continues running in OBS, but its HTML element becomes hidden and the browser source is transparent between bouts; the source does not need to be removed or reloaded. The pages load the Socket.IO browser client from jsDelivr and poll local state if that script is unavailable.
 
-## Optional settings
+## Head-to-head and replay safety
 
-The defaults are `127.0.0.1` for the local server address and `5000` for its port. The API URL and timeout can also be changed with `SUMO_API_BASE_URL` and `SUMO_API_TIMEOUT`; `PORT` changes the local server port. Keep the server on the local machine; the control endpoints do not require a password.
+The H2H card uses sumo-api.com's `/api/rikishi/{id}/matches/{opponentId}` data. It counts only completed meetings before the selected bout, including earlier matches in the same basho, and excludes the selected bout and later bouts so a replay does not reveal its result. The arrow history is ordered oldest to newest; green left arrows indicate wins by the wrestler on the left, and purple right arrows indicate wins by the wrestler on the right. If an API response is incomplete or malformed, the pre-match endpoint reports an error rather than presenting a misleading record.
 
-## Running the tests (optional)
+Basho records are calculated from completed earlier-day bouts and earlier bouts on the selected day. Winners and winning techniques are not sent to the overlays. If an earlier result is unavailable, the record is shown as unavailable rather than guessed.
 
-The tests are only needed if you are developing or changing the program.
+## Tests and saved API data
 
-**Windows PowerShell**, after setting up `.venv`:
+Normal tests do not call sumo-api.com. They use the checked-in API response snapshot at `tests/fixtures/sumo-api-202505-day1.json`, containing bout cards for all six divisions and a real H2H response. The snapshot avoids network dependence and rate limits during routine test runs.
+
+Install test dependencies and run the tests with:
+
+**Windows PowerShell**
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[test]"
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-**AlmaLinux WSL**, after activating the WSL environment:
+**AlmaLinux WSL**, after activating the virtual environment:
 
 ```bash
 python -m pip install -e '.[test]'
 python -m pytest
+```
+
+To explicitly run the API snapshot test against live sumo-api.com instead, add `--live-api`:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest --live-api
+```
+
+```bash
+python -m pytest --live-api
 ```

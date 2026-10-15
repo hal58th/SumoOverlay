@@ -1,25 +1,59 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="control-page">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Overlay Controls</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css') }}">
   <style>
-    body { background: #151923; color: #f5f7fa; display: grid; place-items: center; }
-    .control-panel { width: min(680px, calc(100% - 32px)); padding: 28px; }
-    .control-panel .bout-card { position: static; width: 100%; transform: none; }
-    .buttons { display: flex; gap: 12px; margin-top: 20px; }
-    button { flex: 1; padding: 14px; border: 0; border-radius: 8px; cursor: pointer;
-      background: #e6b85c; color: #171717; font-size: 16px; font-weight: 700; }
+    html.control-page { height: auto; min-height: 100%; overflow-y: auto; }
+    body.control-page { display: block; height: auto; min-height: 100%; overflow-x: hidden;
+      overflow-y: auto; background: #151923; color: #f5f7fa; }
+    .control-panel { width: min(620px, calc(100% - 24px)); margin: 0 auto; padding: 16px 0 24px; }
+    .control-panel h1 { margin: 0 0 12px; font-size: 24px; }
+    .control-panel .bout-card { position: static; width: 100%; padding: 14px; transform: none; }
+    .control-panel .wrestler-name { font-size: clamp(16px, 3vw, 28px); }
+    .control-panel .matchup { gap: 12px; margin-top: 12px; }
+    .control-panel .rank { margin-top: 5px; font-size: 12px; }
+    .control-panel .record { margin-top: 5px; font-size: 16px; }
+    .control-panel .head-to-head { margin-top: 12px; font-size: 16px; }
+    .buttons { display: flex; gap: 8px; margin-top: 10px; }
+    .division-jump { display: flex; align-items: end; gap: 8px; margin-top: 10px;
+      padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
+    .division-jump label { display: grid; flex: 1; gap: 4px; font-size: 13px; }
+    .mode-row { display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
+    .mode-label { color: #e8bd68; font-weight: 700; }
+    .pre-match-controls { display: grid; grid-template-columns: minmax(100px, 1fr) auto;
+      align-items: end; gap: 8px; margin-top: 10px; padding: 10px;
+      border: 1px solid #434a56; border-radius: 8px; }
+    .pre-match-duration { display: grid; gap: 4px; font-size: 13px; }
+    .pre-match-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+    .pre-match-help { grid-column: 1 / -1; margin: 0; color: #c2c8d0; font-size: 12px; }
+    input { min-width: 0; padding: 8px; border: 1px solid #687181; border-radius: 6px;
+      background: #202632; color: #fff; font-size: 14px; }
+    .links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+    a { color: #e8bd68; }
+    button { flex: 1; padding: 9px 10px; border: 0; border-radius: 6px; cursor: pointer;
+      background: #e6b85c; color: #171717; font-size: 13px; font-weight: 700; }
+    #mode-toggle, #pre-match-pin, #save-duration { flex: 0 0 auto; }
     button:disabled { cursor: wait; opacity: .6; }
     #error { min-height: 1.5em; color: #ff9e9e; }
+    @media (max-width: 520px) {
+      .control-panel .bout-card { padding: 12px; }
+      .control-panel .matchup { gap: 8px; }
+      .mode-row { align-items: flex-start; flex-direction: column; }
+      .division-jump { align-items: stretch; }
+      .pre-match-controls { grid-template-columns: 1fr; }
+      .pre-match-actions { justify-content: stretch; }
+      .pre-match-help { grid-column: auto; }
+    }
   </style>
 </head>
-<body>
+<body class="control-page">
   <main class="control-panel">
     <h1>Sumo Overlay Controls</h1>
-    <section id="bout-card" class="bout-card" aria-live="polite">
+    <section id="bout-card" class="bout-card pre-match-card" aria-live="polite">
       <div class="bout-meta"><span>SUMO</span><span id="bout-number"></span></div>
       <div class="matchup">
         <section class="wrestler east">
@@ -34,15 +68,46 @@
           <div id="west-record" class="record"></div>
         </section>
       </div>
+      <div id="head-to-head" class="head-to-head"></div>
     </section>
     <div class="buttons">
       <button id="prev" type="button">Previous Bout</button>
       <button id="next" type="button">Next Bout</button>
     </div>
+    <form id="division-jump" class="division-jump">
+      <label for="division-number">Go to division (1 Makuuchi · 6 Jonokuchi)
+        <input id="division-number" type="number" min="1" max="6" step="1" required>
+      </label>
+      <button type="submit">Go to division</button>
+    </form>
+    <section class="mode-row">
+      <div>
+        <div>Match control: <span id="mode" class="mode-label">Loading…</span></div>
+        <small id="mode-help">Automated mode is reserved for future OCR match detection.</small>
+      </div>
+      <button id="mode-toggle" type="button">Loading…</button>
+    </section>
+    <section class="pre-match-controls">
+      <label class="pre-match-duration" for="pre-match-seconds">
+        Auto-show duration in seconds (0 = off)
+        <input id="pre-match-seconds" type="number" min="0" step="1" value="10">
+      </label>
+      <div class="pre-match-actions">
+        <button id="save-duration" type="button">Save duration</button>
+        <button id="pre-match-pin" type="button">Show pre-match until I turn it off</button>
+      </div>
+      <p class="pre-match-help">Set duration to 0 to turn timed auto-show off. The show button keeps the card visible until you hide it.</p>
+    </section>
+    <nav class="links">
+      <a href="/main-overlay" target="_blank">Open main overlay</a>
+      <a href="/overlay" target="_blank">Open pre-match overlay</a>
+    </nav>
     <p id="error" role="alert"></p>
   </main>
   <script>
     const buttons = [...document.querySelectorAll("button")];
+    let currentMode = "manual";
+    let preMatchPinned = false;
     function recordText(record) {
       return record ? `${record.wins}-${record.losses}` : "Record unavailable";
     }
@@ -55,7 +120,49 @@
       document.getElementById("west-rank").textContent = state.west.rank || "";
       document.getElementById("east-record").textContent = recordText(state.east.record);
       document.getElementById("west-record").textContent = recordText(state.west.record);
+      if (state.headToHead) {
+        document.getElementById("head-to-head").textContent =
+          `Head to head: ${state.headToHead.eastWins} - ${state.headToHead.westWins} (${state.headToHead.total} prior completed bouts)`;
+      }
     }
+    function renderSettings(response) {
+      currentMode = response.settings.control.mode;
+      document.getElementById("mode").textContent =
+        currentMode === "manual" ? "Manual" : "Automated";
+      document.getElementById("mode-toggle").textContent =
+        currentMode === "manual" ? "Switch to automated" : "Switch to manual";
+      document.getElementById("mode-help").textContent =
+        currentMode === "automated"
+          ? "OCR will advance bouts automatically when it is implemented."
+          : "Use Previous/Next to select bouts manually.";
+      document.getElementById("pre-match-seconds").value =
+        response.settings.control.pre_match_seconds;
+      preMatchPinned = response.settings.control.pre_match_pinned;
+      document.getElementById("pre-match-pin").textContent =
+        preMatchPinned ? "Hide pre-match now" : "Show pre-match until I turn it off";
+      if (response.reloadError) {
+        document.getElementById("error").textContent =
+          `Settings reload failed; continuing with previous settings. ${response.reloadError}`;
+      } else if (document.getElementById("error").textContent.startsWith("Settings reload failed")) {
+        document.getElementById("error").textContent = "";
+      }
+      const needsRestart = Object.values(response.restartRequired || {}).some(Boolean);
+      if (needsRestart) {
+        document.getElementById("error").textContent =
+          "Server host or port changed. Restart the app for that change to take effect.";
+      }
+    }
+    function loadSettings() {
+      return fetch("/api/settings")
+        .then(response => {
+          if (!response.ok) throw new Error("Unable to load settings");
+          return response.json();
+        })
+        .then(renderSettings)
+        .catch(error => document.getElementById("error").textContent = error.message);
+    }
+    loadSettings();
+    window.setInterval(loadSettings, 2000);
     function setBusy(busy) {
       buttons.forEach(button => button.disabled = busy);
     }
@@ -66,8 +173,49 @@
       })
       .then(renderBout)
       .catch(error => document.getElementById("error").textContent = error.message);
+    fetch("/api/pre-match-state")
+      .then(response => response.json())
+      .then(renderBout)
+      .catch(error => console.error(error));
     document.getElementById("prev").addEventListener("click", () => move("prev"));
     document.getElementById("next").addEventListener("click", () => move("next"));
+    document.getElementById("division-jump").addEventListener("submit", jumpToDivision);
+    document.getElementById("mode-toggle").addEventListener("click", toggleMode);
+    document.getElementById("pre-match-pin").addEventListener("click", togglePinnedPreMatch);
+    document.getElementById("save-duration").addEventListener("click", saveDuration);
+    if (typeof io === "function") {
+      const socket = io();
+      socket.on("bout_update", state => {
+        renderBout(state);
+        if (state.settings) {
+          renderSettings({
+            settings: {
+              control: {
+                mode: state.settings.mode,
+                pre_match_seconds: state.settings.preMatchSeconds,
+                pre_match_pinned: state.settings.preMatchPinned
+              }
+            },
+            restartRequired: {}
+          });
+        }
+      });
+      socket.on("pre_match_update", renderBout);
+      socket.on("pre_match_error", payload =>
+        document.getElementById("error").textContent = payload.error);
+      socket.on("connect_error", error => document.getElementById("error").textContent =
+        `Control connection failed: ${error.message}`);
+    } else {
+      window.setInterval(() => {
+        fetch("/api/state")
+          .then(async response => {
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || "Unable to refresh bout state");
+            renderBout(payload);
+          })
+          .catch(error => document.getElementById("error").textContent = error.message);
+      }, 1000);
+    }
     function move(direction) {
       setBusy(true);
       document.getElementById("error").textContent = "";
@@ -76,6 +224,81 @@
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error || "Unable to change bout");
           renderBout(payload);
+        })
+        .catch(error => document.getElementById("error").textContent = error.message)
+        .finally(() => setBusy(false));
+    }
+    function jumpToDivision(event) {
+      event.preventDefault();
+      const division = Number(document.getElementById("division-number").value);
+      if (!Number.isInteger(division) || division < 1 || division > 6) {
+        document.getElementById("error").textContent =
+          "Enter a division number from 1 through 6.";
+        return;
+      }
+      setBusy(true);
+      document.getElementById("error").textContent = "";
+      fetch("/api/control/division", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ division })
+      })
+        .then(async response => {
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Unable to jump to division");
+          renderBout(payload);
+        })
+        .catch(error => document.getElementById("error").textContent = error.message)
+        .finally(() => setBusy(false));
+    }
+    function toggleMode() {
+      const nextMode = currentMode === "manual" ? "automated" : "manual";
+      setBusy(true);
+      document.getElementById("error").textContent = "";
+      fetch("/api/control/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: nextMode })
+      })
+        .then(async response => {
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Unable to change control mode");
+          currentMode = payload.settings.mode;
+          return fetch("/api/settings");
+        })
+        .then(response => {
+          if (!response.ok) throw new Error("Unable to reload settings");
+          return response.json();
+        })
+        .then(renderSettings)
+        .catch(error => document.getElementById("error").textContent = error.message)
+        .finally(() => setBusy(false));
+    }
+    function togglePinnedPreMatch() {
+      updatePreMatch({ pinned: !preMatchPinned });
+    }
+    function saveDuration() {
+      const value = Number(document.getElementById("pre-match-seconds").value);
+      if (!Number.isFinite(value) || value < 0) {
+        document.getElementById("error").textContent =
+          "Pre-match duration must be a number that is zero or greater.";
+        return;
+      }
+      updatePreMatch({ seconds: value });
+    }
+    function updatePreMatch(settings) {
+      setBusy(true);
+      document.getElementById("error").textContent = "";
+      fetch("/api/control/pre-match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings)
+      })
+        .then(async response => {
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Unable to update pre-match display");
+          renderBout(payload);
+          return loadSettings();
         })
         .catch(error => document.getElementById("error").textContent = error.message)
         .finally(() => setBusy(false));

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sumo-overlay"
 version = "0.1.0"
-description = "A local, manually controlled sumo bout overlay for OBS"
+description = "A configurable sumo bout and pre-match overlay for OBS"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -21,7 +21,7 @@ test = ["pytest>=8,<9"]
 testpaths = ["tests"]
 
 [tool.setuptools]
-py-modules = ["app", "bout_state", "sumo_data"]
+py-modules = ["app", "bout_state", "config", "sumo_data"]
 packages = ["templates", "static"]
 
 [tool.setuptools.package-data]

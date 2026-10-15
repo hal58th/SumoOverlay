@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from threading import local
 from typing import Any
 from urllib.parse import quote
 
 import requests
+
+
+DIVISION_ORDER = ("Jonokuchi", "Jonidan", "Sandanme", "Makushita", "Juryo", "Makuuchi")
 
 
 class SumoApiError(RuntimeError):
@@ -43,12 +48,14 @@ class Bout:
     match_no: int
     east: BoutSide
     west: BoutSide
+    division: str = "Makuuchi"
 
     def to_payload(self, index: int, total: int) -> dict[str, Any]:
         return {
             "index": index,
             "total": total,
             "matchNo": self.match_no,
+            "division": self.division,
             "east": self.east.to_dict(),
             "west": self.west.to_dict(),
         }
@@ -151,6 +158,7 @@ def build_bouts(
                     rank=match.get("westRank") if isinstance(match.get("westRank"), str) else None,
                     record=record_for(west_id),
                 ),
+                division=match.get("division", "Makuuchi"),
             )
         )
         apply_result(match)
@@ -193,11 +201,18 @@ class SumoApiClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.session = session or requests.Session()
+        self.session = session
+        self._thread_sessions = local()
 
     def _get_json(self, url: str) -> dict[str, Any]:
         try:
-            response = self.session.get(url, timeout=self.timeout)
+            session = self.session
+            if session is None:
+                session = getattr(self._thread_sessions, "session", None)
+                if session is None:
+                    session = requests.Session()
+                    self._thread_sessions.session = session
+            response = session.get(url, timeout=self.timeout)
             response.raise_for_status()
         except requests.RequestException as error:
             raise SumoApiError(f"Unable to fetch sumo-api.com data: {error}") from error
@@ -215,10 +230,30 @@ class SumoApiClient:
         payload = self._get_json(
             f"{self.base_url}/basho/{basho_id}/torikumi/{division_path}/{day}"
         )
-        return _parse_matches(payload, day)
+        matches = _parse_matches(payload, day)
+        for match in matches:
+            match["division"] = division
+        return matches
 
     def fetch_rikishi(self, rikishi_id: int) -> dict[str, Any]:
         return self._get_json(f"{self.base_url}/rikishi/{rikishi_id}")
+
+    def fetch_head_to_head(self, rikishi_id: int, opponent_id: int) -> list[dict[str, Any]]:
+        payload = self._get_json(
+            f"{self.base_url}/rikishi/{rikishi_id}/matches/{opponent_id}"
+        )
+        matches = payload.get("matches")
+        if not isinstance(matches, list) or any(not isinstance(match, dict) for match in matches):
+            raise SumoApiError("sumo-api.com returned an invalid head-to-head match list")
+        total = payload.get("total")
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise SumoApiError("sumo-api.com returned an invalid head-to-head match count")
+        if total > len(matches):
+            raise SumoApiError(
+                "sumo-api.com returned only part of the head-to-head history; "
+                "cannot calculate a complete pre-match record"
+            )
+        return matches
 
 
 class BashoSchedule:
@@ -235,16 +270,39 @@ class BashoSchedule:
         self.basho_id = basho_id
         self.division = division
         self.day = day
+        self._divisions = DIVISION_ORDER if division == "all" else (division,)
+        self._h2h_cache: dict[tuple[int, int], list[dict[str, Any]]] = {}
         self._prior_days = [
-            client.fetch_torikumi(basho_id, division, current_day)
+            self._fetch_day(current_day)
             for current_day in range(1, day)
         ]
-        self._current_day = client.fetch_torikumi(basho_id, division, day)
+        self._current_day = self._fetch_day(day)
         self._bouts = build_bouts(self._prior_days, self._current_day)
         if not self._bouts:
             raise SumoApiError(f"No bouts were returned for {division}, day {day}")
         self._profile_ids = sorted(_participant_ids(self._current_day))
         self._kanji_lookup: dict[str, str] | None = None
+
+    def _fetch_day(self, day: int) -> list[dict[str, Any]]:
+        if len(self._divisions) == 1:
+            matches = self.client.fetch_torikumi(self.basho_id, self._divisions[0], day)
+        else:
+            with ThreadPoolExecutor(max_workers=len(self._divisions)) as executor:
+                responses = executor.map(
+                    lambda division: self.client.fetch_torikumi(
+                        self.basho_id, division, day
+                    ),
+                    self._divisions,
+                )
+                matches = [match for response in responses for match in response]
+        order = {division: index for index, division in enumerate(DIVISION_ORDER)}
+        return sorted(
+            matches,
+            key=lambda match: (
+                order.get(match.get("division"), len(order)),
+                _required_int(match.get("matchNo"), "match number"),
+            ),
+        )
 
     @property
     def kanji_lookup(self) -> dict[str, str]:
@@ -262,10 +320,67 @@ class BashoSchedule:
         return self._bouts
 
     def refresh(self) -> list[Bout]:
-        current_day = self.client.fetch_torikumi(self.basho_id, self.division, self.day)
+        current_day = self._fetch_day(self.day)
         bouts = build_bouts(self._prior_days, current_day)
         if not bouts:
             raise SumoApiError(f"No bouts were returned for {self.division}, day {self.day}")
         self._current_day = current_day
         self._bouts = bouts
         return self._bouts
+
+    def head_to_head(self, bout: Bout) -> dict[str, Any]:
+        pair = (
+            min(bout.east.rikishi_id, bout.west.rikishi_id),
+            max(bout.east.rikishi_id, bout.west.rikishi_id),
+        )
+        if pair not in self._h2h_cache:
+            self._h2h_cache[pair] = self.client.fetch_head_to_head(*pair)
+
+        target = (
+            self.basho_id,
+            self.day,
+            DIVISION_ORDER.index(bout.division) if bout.division in DIVISION_ORDER else len(DIVISION_ORDER),
+            bout.match_no,
+        )
+        east_wins = 0
+        west_wins = 0
+        history: list[str] = []
+        prior_matches: list[tuple[tuple[str, int, int, int], int | None]] = []
+        for match in self._h2h_cache[pair]:
+            match_division = match.get("division")
+            if match_division not in DIVISION_ORDER:
+                raise SumoApiError("sumo-api.com returned an invalid division in head-to-head history")
+            basho_id = match.get("bashoId")
+            if not isinstance(basho_id, str) or len(basho_id) != 6 or not basho_id.isdigit():
+                raise SumoApiError("sumo-api.com returned an invalid basho ID in head-to-head history")
+            match_key = (
+                basho_id,
+                _required_int(match.get("day"), "head-to-head day"),
+                DIVISION_ORDER.index(match_division),
+                _required_int(match.get("matchNo"), "head-to-head match number"),
+            )
+            if match_key >= target:
+                continue
+            winner_id = match.get("winnerId")
+            if winner_id is not None:
+                winner_id = _required_int(winner_id, "head-to-head winner ID")
+                if winner_id not in (bout.east.rikishi_id, bout.west.rikishi_id):
+                    raise SumoApiError(
+                        "sumo-api.com head-to-head winner is not one of the bout participants"
+                    )
+            prior_matches.append((match_key, winner_id))
+
+        for _, winner_id in sorted(prior_matches, key=lambda item: item[0]):
+            if winner_id == bout.east.rikishi_id:
+                east_wins += 1
+                history.append("east")
+            elif winner_id == bout.west.rikishi_id:
+                west_wins += 1
+                history.append("west")
+
+        return {
+            "eastWins": east_wins,
+            "westWins": west_wins,
+            "total": east_wins + west_wins,
+            "history": history,
+        }
