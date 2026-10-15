@@ -5,7 +5,7 @@ This program downloads a basho's bout lists from [sumo-api.com](https://sumo-api
 1. **Main overlay** — a compact, persistent strip in the top-left with the current division, wrestler names, their records before this bout, and abbreviated ranks.
 2. **Pre-match overlay** — a larger matchup card with ranks, pre-bout records, and head-to-head (H2H) wins. When enabled, it appears after a bout is selected and hides after the configured number of seconds. This timer works the same in manual and automated modes; set the duration to `0` or use the Control page toggle to turn it off.
 
-Settings are read from `config.json`; the program does not use environment variables. The app watches that file and reloads valid changes while it is running. OCR/screen capture and automatic match detection are not implemented yet. “Automated” is reserved for future OCR-driven bout advancement; until then, bout selection uses the Previous/Next buttons in either mode.
+Settings are read from `config.json`; the program does not use environment variables. The app watches that file and reloads valid changes while it is running. Optional OCR can recognize the two Japanese names on ABEMA's scoresheet and select the matching scheduled bout automatically. OCR uses the exact Japanese-to-English lookup from sumo-api.com; it does not translate names.
 
 ## Requirements
 
@@ -14,7 +14,7 @@ Settings are read from `config.json`; the program does not use environment varia
 - OBS Studio, if you want to stream the overlays.
 - This project folder. The examples assume it is `C:\SumoOverlay` in Windows, or `/mnt/c/SumoOverlay` from WSL.
 
-The app uses CPU-only Python packages; EasyOCR, PyTorch, and a GPU are not required.
+The base app uses CPU-only Python packages. OCR is optional and requires EasyOCR, PyTorch, MSS, and NumPy; a GPU is not required.
 
 ## Configure the app
 
@@ -29,19 +29,67 @@ Open `config.json` in a text editor and change the values you need. Keep the bra
 | `api.timeout_seconds` | Maximum wait for an API request. |
 | `server.host`, `server.port` | Local web-server address and port. Keep the host set to `127.0.0.1` unless you know why it needs to change. |
 | `server.watch_interval_seconds` | How often, in seconds, the app checks `config.json` for edits. |
-| `control.mode` | `"manual"` or `"automated"`. This selects how bouts will be controlled when OCR match detection is implemented; it does not change pre-match overlay behavior today. |
+| `control.mode` | `"manual"` or `"automated"`. Manual mode uses the Control page buttons. Automated mode lets OCR select the bout when both names are stably recognized. |
 | `control.pre_match_seconds` | How long, in seconds, the pre-match overlay appears after a bout change. `0` disables timed auto-show. |
 | `control.pre_match_pinned` | `true` or `false`. When true, keeps the pre-match overlay visible until you hide it from the Control page. |
 | `overlay.canvas` | The OBS browser-source design width and height, in pixels. |
 | `overlay.main` | Main overlay rectangle: top-left `x`, `y`, `width`, and `height`, in pixels on the canvas. It centers each wrestler's name over their rank and record (shown side by side); division and “VS” are in the middle. |
 | `overlay.pre_match` | Pre-match overlay rectangle, using the same pixel coordinate system. The default covers almost the full canvas. |
-| `capture_regions.abema_scoresheet` | Rectangle around the ABEMA scoresheet, in desktop screen pixels. Reserved for the future OCR reader; OCR does not currently use it. |
+| `ocr.enabled` | Enables the OCR scanner when the app is started normally. |
+| `ocr.monitor` | MSS monitor number, starting at `1` for the first monitor (monitor `0` is the combined virtual desktop and is not used). |
+| `ocr.interval_seconds` | Delay between OCR scans. |
+| `ocr.stable_readings` | Number of consecutive matching reads required before selecting a bout. |
+| `ocr.minimum_confidence` | Minimum EasyOCR confidence from `0` through `1` for each name. |
+| `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `capture_regions.abema_scoresheet`. |
+| `capture_regions.abema_scoresheet` | Rectangle around the ABEMA scoresheet, in pixels relative to the selected monitor. |
 
-Both overlay rectangles must fit within `overlay.canvas`. Capture-region coordinates refer to the desktop/video capture area, not the OBS overlay canvas. If ABEMA moves its scoresheet, update the capture rectangle to match the new screen location. The main and pre-match overlay rectangles can be adjusted separately. The default pre-match rectangle is almost full screen; the card background is 50% opaque so the broadcast remains visible behind it while the text stays fully readable.
+Both overlay rectangles must fit within `overlay.canvas`. Capture-region coordinates refer to the selected desktop monitor, not the OBS overlay canvas. OCR name-box coordinates are pixel offsets inside that capture region. If ABEMA moves its scoresheet, update the capture rectangle and/or name-box coordinates to match. The main and pre-match overlay rectangles can be adjusted separately. The default pre-match rectangle is almost full screen; the card background is 50% opaque so the broadcast remains visible behind it while the text stays fully readable.
 
-`division: 0` loads all divisions by requesting each of the six supported divisions separately; the API does not provide a working all-divisions endpoint. Bouts are combined in broadcast order. Values 1 through 6 select one division; number 1 is the top division (Makuuchi) and number 6 is Jonokuchi. For compatibility, existing configuration files using `"all"` or division names are still accepted; use the numeric values in new or edited settings.
+`division: 0` loads all divisions by requesting each of the six supported divisions separately; the API does not provide a working all-divisions endpoint. Bouts are combined in broadcast order. Values 1 through 6 select one division; number 1 is the top division (Makuuchi) and number 6 is Jonokuchi. Use these numeric codes in `config.json`.
 
-When you save a valid JSON file, the app applies changes within the configured watch interval. A change to the basho, division, or day reloads its bout data and selects the first bout. Invalid JSON/settings or unavailable API data leave the last working settings active; the Control page reports a reload error. Fix the file and save again. Changing `server.host` or `server.port` requires restarting the app because the listening socket cannot be rebound while running.
+When you save a valid JSON file, the app applies changes within the configured watch interval. A change to the basho, division, or day reloads its bout data and selects the first bout. Changes to the OCR monitor, capture rectangle, name boxes, interval, and confidence are used on the next scan. Invalid JSON/settings or unavailable API data leave the last working settings active; the Control page reports a reload error. Fix the file and save again. Changing `server.host` or `server.port` requires restarting the app because the listening socket cannot be rebound while running.
+
+## OCR bout detection
+
+OCR is opt-in at installation, but the sample `config.json` has `ocr.enabled` set to `true`. The scanner starts when you run `app.py`; it waits without capturing the screen while control mode is **manual**. To use it, install the optional packages, run the app on the same Windows desktop as the browser playing ABEMA, then choose **Automated** on the Control page. The page reports whether OCR is paused, reading, confirming names, below the confidence threshold, matched to a bout, or reporting an error.
+
+### Install OCR on Windows
+
+Open PowerShell in the project folder and install the optional OCR dependencies into this project's virtual environment:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"
+```
+
+EasyOCR also installs PyTorch, so this step can take several minutes and needs an internet connection. On its first OCR use, EasyOCR downloads its text-detection and Japanese-recognition models; allow those downloads to finish before the broadcast. This project sets PyTorch to two CPU threads and explicitly disables GPU use. The regular app and unit tests do not load the OCR model unless the live scanner is started.
+
+Run `.\.venv\Scripts\python.exe app.py` from PowerShell. The recommended setup is to run the app in Windows because MSS must capture the Windows monitor where ABEMA is playing. WSL has its own Linux screen session and normally cannot capture a Windows browser window. If your browser is running inside a Linux desktop that MSS can capture, install OCR in the activated WSL environment with `python -m pip install -e '.[ocr]'`; otherwise, use Windows PowerShell. Windows OBS can continue to use `http://127.0.0.1:5000` when the app runs in Windows.
+
+### Calibrate OCR when the browser is not full-screen
+
+The scanner captures a rectangle of the monitor, not a fixed-size browser window. The default example captures a 1920×1080 rectangle at the top-left of monitor 1. Change `capture_regions.abema_scoresheet` in `config.json` to the screen-pixel rectangle that contains the ABEMA scoresheet. Its `x` and `y` start at the top-left of the selected monitor (not the whole multi-monitor desktop); `width` and `height` are the rectangle size. The full rectangle must fit on that monitor.
+
+There is no drag-to-select calibration tool in the app yet. For now, measure the boxes from a screenshot and enter their coordinates in `config.json`. The name boxes use pixels (not percentages), so there is no percentage conversion:
+
+1. Take a screenshot showing ABEMA at the same browser size and screen position you plan to use.
+2. In an image editor that shows the cursor position and selection size, measure the screen-pixel rectangle containing the scoresheet. Enter that rectangle as `capture_regions.abema_scoresheet` (`x`, `y`, `width`, `height`). The `x` and `y` are relative to the top-left corner of the selected monitor.
+3. In the same screenshot, measure each wrestler's large, lower name line. Aim for the ring name only; avoid including the smaller pronunciation line above it.
+4. For each name, subtract the capture rectangle's screen `x` and `y` from the name rectangle's screen `x` and `y`. Use those relative `x` and `y` offsets, plus the measured pixel width and height, in `ocr.name_boxes.left` and `ocr.name_boxes.right`.
+
+For example, if the capture rectangle starts at screen `(100, 50)` and a wrestler's lower name line starts at `(260, 70)` with a size of `130 × 45` pixels, the name box is `x: 160, y: 20, width: 130, height: 45`. The subtraction is simply `(260 - 100, 70 - 50)`. Enter it like this:
+
+```json
+"name_boxes": {
+  "left":  { "x": 160, "y": 20, "width": 130, "height": 45 },
+  "right": { "x": 400, "y": 20, "width": 130, "height": 45 }
+}
+```
+
+`x: 0, y: 0` is the capture rectangle's top-left pixel. The name-box width and height are also pixels. For the same example, if the right wrestler's name starts at `(500, 70)` and measures `130 × 45` pixels, its relative box is `x: 400, y: 20, width: 130, height: 45`. The name boxes must fit inside the capture rectangle. Save `config.json`; the running app applies the new coordinates automatically. Keep both full wrestler names inside their respective boxes, but avoid including the neighboring name or scoresheet labels. If the web player moves, resize it, or changes its layout, recalibrate the capture rectangle and name boxes.
+
+OCR waits for the configured number of consecutive reads before acting. It selects a bout only when both recognized names resolve through the API's Japanese-name dictionary and uniquely identify a bout in the loaded basho, day, and division schedule. It will not guess or machine-translate unknown names. Use `division: 0` to load every division when the broadcast can move between divisions. The automatic detector can identify the bout already on screen, so it also supports starting an offline replay in the middle of the schedule.
+
+Japanese OCR can confuse similar-looking or uncommon kanji. If the Control page says the recognized names are not in the schedule, inspect the displayed OCR text and recalibrate the name boxes or improve the captured video size/clarity. Do not lower the confidence threshold just to force a match: the app only changes bouts after exact API dictionary resolution and a unique schedule match.
 
 ## Install and run on Windows PowerShell
 
@@ -156,9 +204,10 @@ With the app running, open:
 - Current bout JSON: <http://127.0.0.1:5000/api/state>
 - Pre-match and H2H JSON: <http://127.0.0.1:5000/api/pre-match-state>
 - Kanji-to-English lookup: <http://127.0.0.1:5000/api/lookup>
+- OCR status: <http://127.0.0.1:5000/api/ocr/status>
 - Effective settings/reload status: <http://127.0.0.1:5000/api/settings>
 
-Use **Previous Bout** and **Next Bout** for replay or manual synchronization. Enter a division number from 1 (Makuuchi) to 6 (Jonokuchi) and choose **Go to division** to jump to that division's first scheduled bout. This requires `division: 0` so all six divisions are loaded. The match-control toggle selects manual or automated control; automated bout detection will be wired to OCR in a future change.
+Use **Previous Bout** and **Next Bout** for replay or manual synchronization. Enter a division number from 1 (Makuuchi) to 6 (Jonokuchi) and choose **Go to division** to jump to that division's first scheduled bout. This requires `division: 0` so all six divisions are loaded. Set match control to **Manual** for button-driven selection or **Automated** for OCR selection. The OCR status appears below the mode control.
 
 Use **Auto-show duration** and **Save duration** to set how long the pre-match card appears after a bout change. Set it to `0` to disable timed auto-show. **Show pre-match until I turn it off** pins the card on-screen until you press **Hide pre-match now**; this manual display remains available even when timed auto-show is disabled. These settings are saved in `config.json`.
 
@@ -181,7 +230,7 @@ Basho records are calculated from completed earlier-day bouts and earlier bouts 
 
 ## Tests and saved API data
 
-Normal tests do not call sumo-api.com. They use the checked-in API response snapshot at `tests/fixtures/sumo-api-202505-day1.json`, containing bout cards for all six divisions and a real H2H response. The snapshot avoids network dependence and rate limits during routine test runs.
+Normal tests do not call sumo-api.com or load the OCR model. They use the checked-in API response snapshot at `tests/fixtures/sumo-api-202505-day1.json`, containing bout cards for all six divisions and a real H2H response. The sample ABEMA images in `tests/fixtures/ocr/` are local references for checking crop placement and calibrating OCR without accessing the live broadcast. The snapshot avoids network dependence and rate limits during routine test runs.
 
 Install test dependencies and run the tests with:
 

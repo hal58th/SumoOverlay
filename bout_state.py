@@ -103,6 +103,19 @@ class BoutController:
             self._index = target
             return self._bouts[self._index].to_payload(self._index, len(self._bouts))
 
+    def select_bout_by_kanji(self, left_name: str, right_name: str) -> dict[str, Any] | None:
+        with self._lock:
+            find_bout = getattr(self._schedule, "find_bout_index_by_kanji", None)
+            if not callable(find_bout):
+                return None
+            target = find_bout(left_name, right_name)
+            if target is None:
+                return None
+            if not isinstance(target, int) or not 0 <= target < len(self._bouts):
+                raise SumoApiError("OCR schedule lookup returned an invalid bout index")
+            self._index = target
+            return self._bouts[self._index].to_payload(self._index, len(self._bouts))
+
     def replace_schedule(self, schedule: Any, reset_index: bool = False) -> None:
         with self._lock:
             bouts = schedule.bouts

@@ -263,14 +263,14 @@ class BashoSchedule:
         self,
         client: SumoApiClient,
         basho_id: str,
-        division: str,
+        division: str | None,
         day: int,
     ) -> None:
         self.client = client
         self.basho_id = basho_id
         self.division = division
         self.day = day
-        self._divisions = DIVISION_ORDER if division == "all" else (division,)
+        self._divisions = DIVISION_ORDER if division is None else (division,)
         self._h2h_cache: dict[tuple[int, int], list[dict[str, Any]]] = {}
         self._prior_days = [
             self._fetch_day(current_day)
@@ -311,7 +311,10 @@ class BashoSchedule:
             self._profile_ids = profile_ids
             self._kanji_lookup = None
         if self._kanji_lookup is None:
-            profiles = [self.client.fetch_rikishi(rikishi_id) for rikishi_id in self._profile_ids]
+            with ThreadPoolExecutor(
+                max_workers=min(8, len(self._profile_ids))
+            ) as executor:
+                profiles = list(executor.map(self.client.fetch_rikishi, self._profile_ids))
             self._kanji_lookup = build_kanji_lookup(profiles)
         return self._kanji_lookup
 
@@ -384,3 +387,19 @@ class BashoSchedule:
             "total": east_wins + west_wins,
             "history": history,
         }
+
+    def find_bout_index_by_kanji(self, left_name: str, right_name: str) -> int | None:
+        """Resolve two OCR-read Japanese names to one bout in the selected schedule."""
+        lookup = self.kanji_lookup
+        left_english = lookup.get(left_name) or lookup.get("".join(left_name.split()))
+        right_english = lookup.get(right_name) or lookup.get("".join(right_name.split()))
+        if not left_english or not right_english:
+            return None
+
+        detected_pair = {left_english.casefold(), right_english.casefold()}
+        matches = [
+            index
+            for index, bout in enumerate(self._bouts)
+            if {bout.east.name.casefold(), bout.west.name.casefold()} == detected_pair
+        ]
+        return matches[0] if len(matches) == 1 else None

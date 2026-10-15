@@ -83,10 +83,11 @@
     <section class="mode-row">
       <div>
         <div>Match control: <span id="mode" class="mode-label">Loading…</span></div>
-        <small id="mode-help">Automated mode is reserved for future OCR match detection.</small>
+        <small id="mode-help">Automated mode tracks bouts using OCR on the selected monitor.</small>
       </div>
       <button id="mode-toggle" type="button">Loading…</button>
     </section>
+    <p id="ocr-status" role="status">OCR status: checking…</p>
     <section class="pre-match-controls">
       <label class="pre-match-duration" for="pre-match-seconds">
         Auto-show duration in seconds (0 = off)
@@ -133,7 +134,7 @@
         currentMode === "manual" ? "Switch to automated" : "Switch to manual";
       document.getElementById("mode-help").textContent =
         currentMode === "automated"
-          ? "OCR will advance bouts automatically when it is implemented."
+          ? "OCR will select the bout when both names are recognized."
           : "Use Previous/Next to select bouts manually.";
       document.getElementById("pre-match-seconds").value =
         response.settings.control.pre_match_seconds;
@@ -163,6 +164,36 @@
     }
     loadSettings();
     window.setInterval(loadSettings, 2000);
+    function loadOcrStatus() {
+      fetch("/api/ocr/status")
+        .then(async response => {
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Unable to read OCR status");
+          const status = document.getElementById("ocr-status");
+          if (!payload.enabled) {
+            status.textContent = "OCR is disabled in config.json.";
+          } else if (payload.mode !== "automated") {
+            status.textContent = "OCR is paused in manual mode.";
+          } else if (payload.state === "low-confidence") {
+            const leftConfidence = Math.round(payload.leftConfidence * 100);
+            const rightConfidence = Math.round(payload.rightConfidence * 100);
+            status.textContent =
+              `OCR confidence too low: ${payload.left || "left name unread"} (${leftConfidence}%) vs ${payload.right || "right name unread"} (${rightConfidence}%).`;
+          } else if (payload.state === "matched" && payload.matchedBout) {
+            status.textContent =
+              `OCR matched ${payload.matchedBout.division}, bout ${payload.matchedBout.matchNo}.`;
+          } else if (payload.state === "unmatched") {
+            status.textContent = `OCR read ${payload.left} vs ${payload.right}, but that bout is not in the loaded schedule.`;
+          } else if (payload.state === "error") {
+            status.textContent = `OCR error: ${payload.error}`;
+          } else {
+            status.textContent = `OCR status: ${payload.state}.`;
+          }
+        })
+        .catch(error => document.getElementById("ocr-status").textContent = error.message);
+    }
+    loadOcrStatus();
+    window.setInterval(loadOcrStatus, 2000);
     function setBusy(busy) {
       buttons.forEach(button => button.disabled = busy);
     }
@@ -207,7 +238,7 @@
         `Control connection failed: ${error.message}`);
     } else {
       window.setInterval(() => {
-        fetch("/api/state")
+        fetch("/api/pre-match-state")
           .then(async response => {
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error || "Unable to refresh bout state");

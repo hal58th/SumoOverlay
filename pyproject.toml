@@ -15,13 +15,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ocr = ["easyocr>=1.7,<2", "mss>=9,<11", "numpy>=1.24,<3"]
 test = ["pytest>=8,<9"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.setuptools]
-py-modules = ["app", "bout_state", "config", "sumo_data"]
+py-modules = ["app", "bout_state", "config", "ocr_scanner", "sumo_data"]
 packages = ["templates", "static"]
 
 [tool.setuptools.package-data]

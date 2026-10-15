@@ -14,6 +14,7 @@ from flask_socketio import SocketIO, emit
 
 from bout_state import BoutController
 from config import DIVISION_NAMES, SettingsError, SettingsWatcher, load_settings
+from ocr_scanner import OCRScanner
 from sumo_data import BashoSchedule, SumoApiClient, SumoApiError
 
 
@@ -27,6 +28,7 @@ def create_app(
     test_config: dict[str, Any] | None = None,
     watch_config: bool = True,
     schedule_factory: Callable[[dict[str, Any]], Any] | None = None,
+    enable_ocr: bool = False,
 ) -> Flask:
     app = Flask(__name__)
     if test_config:
@@ -46,7 +48,7 @@ def create_app(
             client,
             new_settings["basho_id"],
             (
-                "all"
+                None
                 if new_settings["division"] == 0
                 else DIVISION_NAMES[new_settings["division"]]
             ),
@@ -110,11 +112,36 @@ def create_app(
             except SumoApiError as error:
                 raise SettingsError(f"Could not load the selected basho data: {error}") from error
             controller.replace_schedule(replacement, reset_index=True)
+            ocr_scanner.reset_detection()
 
         with settings_lock:
             active_settings = copy.deepcopy(new_settings)
         app.extensions["sumo_schedule"] = controller.schedule
         broadcast_state(update_pre_match)
+
+    def handle_ocr_match(left_name: str, right_name: str) -> dict[str, Any] | None:
+        previous_index = controller.state()["index"]
+        selected = controller.select_bout_by_kanji(left_name, right_name)
+        if selected is None:
+            return None
+        state = public_state()
+        if state["index"] != previous_index:
+            socketio.emit("bout_update", state)
+        try:
+            socketio.emit("pre_match_update", public_state(include_head_to_head=True))
+        except SumoApiError as error:
+            app.logger.error("Unable to update head-to-head display after OCR: %s", error)
+            socketio.emit("pre_match_error", {"error": str(error)})
+        return state
+
+    def current_settings() -> dict[str, Any]:
+        with settings_lock:
+            return copy.deepcopy(active_settings)
+
+    ocr_scanner = OCRScanner(current_settings, handle_ocr_match, app.logger)
+    app.extensions["ocr_scanner"] = ocr_scanner
+    if enable_ocr:
+        ocr_scanner.start()
 
     if watch_config:
         watcher = SettingsWatcher(
@@ -172,6 +199,14 @@ def create_app(
             }
         )
 
+    @app.get("/api/ocr/status")
+    def get_ocr_status() -> Any:
+        status = ocr_scanner.status()
+        settings_snapshot = current_settings()
+        status["mode"] = settings_snapshot["control"]["mode"]
+        status["enabled"] = settings_snapshot["ocr"]["enabled"]
+        return jsonify(status)
+
     @app.get("/api/lookup")
     def get_lookup() -> Any:
         try:
@@ -191,7 +226,8 @@ def create_app(
         socketio.emit("bout_update", state)
         if state["index"] != old_index:
             try:
-                socketio.emit("pre_match_update", public_state(include_head_to_head=True))
+                state = public_state(include_head_to_head=True)
+                socketio.emit("pre_match_update", state)
             except SumoApiError as error:
                 app.logger.error("Unable to update head-to-head display: %s", error)
                 socketio.emit("pre_match_error", {"error": str(error)})
@@ -227,7 +263,8 @@ def create_app(
         socketio.emit("bout_update", state)
         if state["index"] != old_index:
             try:
-                socketio.emit("pre_match_update", public_state(include_head_to_head=True))
+                state = public_state(include_head_to_head=True)
+                socketio.emit("pre_match_update", state)
             except SumoApiError as error:
                 app.logger.error("Unable to update head-to-head display: %s", error)
                 socketio.emit("pre_match_error", {"error": str(error)})
@@ -337,7 +374,7 @@ def main() -> None:
     arguments = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
-    app = create_app(config_path=arguments.config)
+    app = create_app(config_path=arguments.config, enable_ocr=True)
     watcher: SettingsWatcher = app.extensions["settings_watcher"]
     settings = watcher.snapshot()
     socketio: SocketIO = app.extensions["socketio"]

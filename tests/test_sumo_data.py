@@ -1,3 +1,5 @@
+from threading import Barrier
+
 import pytest
 import requests
 
@@ -118,8 +120,62 @@ def test_schedule_caches_history_and_refreshes_only_selected_day():
     assert client.calls == [1, 2, 2]
 
 
+def test_schedule_matches_ocr_names_to_the_unique_bout_in_either_orientation():
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            profiles = {
+                1: {"shikonaJp": "大喜翔", "shikonaEn": "East 1"},
+                2: {"shikonaJp": "栃幸大", "shikonaEn": "West 2"},
+            }
+            return profiles[rikishi_id]
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+
+    assert schedule.find_bout_index_by_kanji("大喜翔", "栃幸大") == 0
+    assert schedule.find_bout_index_by_kanji("栃幸大", "大喜翔") == 0
+    assert schedule.find_bout_index_by_kanji("知らない", "栃幸大") is None
+
+
+def test_schedule_does_not_choose_between_ambiguous_ocr_matches():
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2), match(2, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            names = {1: "大喜翔", 2: "栃幸大"}
+            english = {1: "East 1", 2: "West 2"}
+            return {"shikonaJp": names[rikishi_id], "shikonaEn": english[rikishi_id]}
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+
+    assert schedule.find_bout_index_by_kanji("大喜翔", "栃幸大") is None
+
+
+def test_schedule_fetches_ocr_profiles_concurrently():
+    class FakeClient:
+        def __init__(self):
+            self.profile_barrier = Barrier(2)
+
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2), match(2, 3, 4)]
+
+        def fetch_rikishi(self, rikishi_id):
+            self.profile_barrier.wait(timeout=2)
+            return {
+                "shikonaJp": f"力士{rikishi_id}",
+                "shikonaEn": f"Rikishi{rikishi_id}",
+            }
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+
+    assert schedule.kanji_lookup["力士1"] == "Rikishi1"
+
+
 def test_cached_sumo_api_snapshot_supports_all_divisions_and_safe_h2h(sumo_api_client):
-    schedule = BashoSchedule(sumo_api_client, "202505", "all", 1)
+    schedule = BashoSchedule(sumo_api_client, "202505", None, 1)
     onosato_vs_wakamotoharu = next(
         bout
         for bout in schedule.bouts

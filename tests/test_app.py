@@ -50,7 +50,39 @@ def test_manual_controls_update_state_and_emit_websocket_event():
     assert schedule.refresh_count == 1
     events = socket_client.get_received()
     assert any(event["name"] == "bout_update" for event in events)
+    assert any(
+        event["name"] == "pre_match_update"
+        and event["args"][0]["headToHead"] is not None
+        for event in events
+    )
     socket_client.disconnect()
+
+
+def test_next_bout_response_contains_the_new_head_to_head_score():
+    class ChangingH2HSchedule(FakeSchedule):
+        def head_to_head(self, bout):
+            return {
+                "eastWins": bout.match_no,
+                "westWins": 3 - bout.match_no,
+                "total": 3,
+                "history": [],
+            }
+
+    schedule = ChangingH2HSchedule(
+        [make_bout(1, 10, 11), make_bout(2, 12, 13)]
+    )
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+
+    response = app.test_client().post("/api/control/next")
+
+    assert response.status_code == 200
+    assert response.json["matchNo"] == 2
+    assert response.json["headToHead"] == {
+        "eastWins": 2,
+        "westWins": 1,
+        "total": 3,
+        "history": [],
+    }
 
 
 def test_failed_refresh_keeps_state_and_returns_explicit_error():
@@ -155,20 +187,72 @@ def test_pre_match_state_counts_division_bouts_and_sanyaku_transition():
     assert sanyaku["boutsUntilNextStage"] is None
 
 
-def test_division_setting_accepts_numbers_and_normalizes_legacy_names():
+def test_division_setting_accepts_only_numeric_division_codes():
     settings = default_settings()
     assert settings["division"] == 0
-    settings["division"] = "all"
-    assert validate_settings(settings)["division"] == 0
 
     settings["division"] = 1
     assert validate_settings(settings)["division"] == 1
 
+    settings["division"] = "all"
+    with pytest.raises(SettingsError, match="division must"):
+        validate_settings(settings)
+
     settings["division"] = "Jonokuchi"
-    assert validate_settings(settings)["division"] == 6
+    with pytest.raises(SettingsError, match="division must"):
+        validate_settings(settings)
 
     settings["division"] = 7
     with pytest.raises(SettingsError, match="division must"):
+        validate_settings(settings)
+
+
+def test_ocr_settings_validate_monitor_and_name_box_bounds():
+    settings = default_settings()
+    settings["ocr"]["monitor"] = 0
+    with pytest.raises(SettingsError, match="ocr.monitor"):
+        validate_settings(settings)
+
+    settings = default_settings()
+    settings["ocr"]["name_boxes"]["right"]["x"] = 1900
+    with pytest.raises(SettingsError, match="must fit inside"):
+        validate_settings(settings)
+
+
+def test_ocr_name_boxes_use_pixels_relative_to_capture_region():
+    settings = default_settings()
+    settings["capture_regions"]["abema_scoresheet"] = {
+        "x": 100,
+        "y": 50,
+        "width": 800,
+        "height": 400,
+    }
+    settings["ocr"]["name_boxes"] = {
+        "left": {"x": 160, "y": 20, "width": 130, "height": 45},
+        "right": {"x": 400, "y": 20, "width": 130, "height": 45},
+    }
+
+    validated = validate_settings(settings)
+
+    assert validated["ocr"]["name_boxes"] == settings["ocr"]["name_boxes"]
+
+
+def test_percentage_name_boxes_are_rejected():
+    settings = default_settings()
+    settings["ocr"]["name_boxes"] = {
+        "left": {"x": 15.5, "y": 3.5, "width": 13, "height": 4.5},
+        "right": {"x": 34, "y": 3.5, "width": 13, "height": 4.5},
+    }
+
+    with pytest.raises(SettingsError, match="must be an integer"):
+        validate_settings(settings)
+
+
+def test_removed_pre_match_enabled_setting_is_rejected():
+    settings = default_settings()
+    settings["control"]["pre_match_enabled"] = False
+
+    with pytest.raises(SettingsError, match="Unknown control setting: pre_match_enabled"):
         validate_settings(settings)
 
 
@@ -229,6 +313,67 @@ def write_config(path, settings):
     path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
 
 
+def test_ocr_match_selects_bout_and_broadcasts_overlay_updates(tmp_path):
+    class OCRSchedule(FakeSchedule):
+        def find_bout_index_by_kanji(self, left_name, right_name):
+            if (left_name, right_name) in (
+                ("大喜翔", "栃幸大"),
+                ("栃幸大", "大喜翔"),
+            ):
+                return 1
+            return None
+
+    settings = default_settings()
+    settings["control"]["mode"] = "automated"
+    settings_path = tmp_path / "config.json"
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=OCRSchedule([make_bout(1, 10, 11), make_bout(2, 12, 13)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    client = app.test_client()
+    socket_client = app.extensions["socketio"].test_client(app)
+    socket_client.get_received()
+
+    scanner = app.extensions["ocr_scanner"]
+    scanner.observe("大喜翔", "栃幸大", stable_readings=1)
+
+    assert client.get("/api/state").json["index"] == 1
+    assert client.get("/api/ocr/status").json["mode"] == "automated"
+    events = socket_client.get_received()
+    assert any(event["name"] == "bout_update" for event in events)
+    assert any(event["name"] == "pre_match_update" for event in events)
+    socket_client.disconnect()
+
+
+def test_ocr_retriggers_pre_match_for_the_already_selected_bout(tmp_path):
+    class OCRSchedule(FakeSchedule):
+        def find_bout_index_by_kanji(self, left_name, right_name):
+            return 0 if (left_name, right_name) == ("大喜翔", "栃幸大") else None
+
+    settings = default_settings()
+    settings["control"]["mode"] = "automated"
+    settings_path = tmp_path / "config.json"
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=OCRSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    socket_client = app.extensions["socketio"].test_client(app)
+    socket_client.get_received()
+
+    app.extensions["ocr_scanner"].observe("大喜翔", "栃幸大", stable_readings=1)
+
+    events = socket_client.get_received()
+    assert not any(event["name"] == "bout_update" for event in events)
+    assert any(event["name"] == "pre_match_update" for event in events)
+    socket_client.disconnect()
+
+
 def test_control_mode_is_persisted_to_json_config(tmp_path):
     settings_path = tmp_path / "config.json"
     settings = default_settings()
@@ -249,7 +394,11 @@ def test_control_mode_is_persisted_to_json_config(tmp_path):
         assert response.json["settings"]["preMatchEnabled"] is True
         assert response.json["settings"]["preMatchSeconds"] == 10
         assert saved_settings["control"]["mode"] == "automated"
-        assert "pre_match_enabled" not in saved_settings["control"]
+        assert set(saved_settings["control"]) == {
+            "mode",
+            "pre_match_seconds",
+            "pre_match_pinned",
+        }
     finally:
         app.extensions["settings_watcher"].stop()
 
