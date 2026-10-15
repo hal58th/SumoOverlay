@@ -89,9 +89,19 @@ def create_app(
     settings_lock = RLock()
     active_settings = settings
     watcher: SettingsWatcher | None = None
+    result_lock = RLock()
+    announced_winner: str | None = None
 
     def public_state(include_head_to_head: bool = False) -> dict[str, Any]:
         result = controller.state(include_head_to_head=include_head_to_head)
+        with result_lock:
+            winner = announced_winner
+        if winner is not None:
+            winner_side = result[winner]
+            loser_side = result["west" if winner == "east" else "east"]
+            winner_side["record"]["wins"] += 1
+            loser_side["record"]["losses"] += 1
+            result["announcedWinner"] = winner
         with settings_lock:
             current = copy.deepcopy(active_settings)
         result["settings"] = {
@@ -105,6 +115,11 @@ def create_app(
             "overlay": current["overlay"],
         }
         return result
+
+    def clear_announced_winner() -> None:
+        nonlocal announced_winner
+        with result_lock:
+            announced_winner = None
 
     def broadcast_state(update_pre_match: bool) -> None:
         pre_match_state = None
@@ -143,6 +158,7 @@ def create_app(
                 raise SettingsError(f"Could not load the selected basho data: {error}") from error
             controller.replace_schedule(replacement, reset_index=True)
             ocr_scanner.reset_detection()
+            clear_announced_winner()
 
         with settings_lock:
             active_settings = copy.deepcopy(new_settings)
@@ -155,6 +171,8 @@ def create_app(
         if selected is None:
             return None
         changed = controller.state()["index"] != previous_index
+        if changed:
+            clear_announced_winner()
         pre_match_state = None
         try:
             state = public_state(include_head_to_head=True)
@@ -252,9 +270,11 @@ def create_app(
             return jsonify({"error": str(error)}), 502
 
     def move_bout(offset: int) -> Any:
+        old_index = controller.state()["index"]
         try:
-            old_index = controller.state()["index"]
             controller.move(offset)
+            if controller.state()["index"] != old_index:
+                clear_announced_winner()
             state = public_state()
         except SumoApiError as error:
             app.logger.error("Unable to update bout state: %s", error)
@@ -293,6 +313,8 @@ def create_app(
         try:
             old_index = controller.state()["index"]
             controller.jump_to_division(division)
+            if controller.state()["index"] != old_index:
+                clear_announced_winner()
             state = public_state()
         except ValueError as error:
             return jsonify({"error": str(error)}), 404
@@ -364,6 +386,35 @@ def create_app(
             return jsonify({"error": str(error)}), 500
         return jsonify(state)
 
+    def set_announced_winner(winner: Any) -> dict[str, Any]:
+        nonlocal announced_winner
+        if winner not in ("east", "west"):
+            raise ValueError("winner must be 'east' or 'west'")
+        with result_lock:
+            announced_winner = winner
+        return public_state()
+
+    @app.post("/api/control/winner")
+    def announce_winner_http() -> Any:
+        payload = request.get_json(silent=True)
+        winner = payload.get("winner") if isinstance(payload, dict) else None
+        try:
+            state = set_announced_winner(winner)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+        socketio.emit("bout_result", state)
+        return jsonify(state)
+
+    @socketio.on("announce_winner")
+    def announce_winner_socket(message: Any) -> None:
+        winner = message.get("winner") if isinstance(message, dict) else None
+        try:
+            state = set_announced_winner(winner)
+        except ValueError as error:
+            emit("control_error", {"error": str(error)})
+            return
+        socketio.emit("bout_result", state)
+
     @socketio.on("connect")
     def send_initial_state() -> None:
         try:
@@ -387,6 +438,8 @@ def create_app(
         try:
             old_index = controller.state()["index"]
             controller.move(1 if message["action"] == "next" else -1)
+            if controller.state()["index"] != old_index:
+                clear_announced_winner()
             state = public_state()
         except SumoApiError as error:
             app.logger.error("Unable to update bout state: %s", error)

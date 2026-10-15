@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Overlay Controls</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=3) }}">
   <style>
     html.control-page { height: auto; min-height: 100%; overflow-y: auto; }
     body.control-page { display: block; height: auto; min-height: 100%; overflow-x: hidden;
@@ -14,9 +14,13 @@
     .control-panel .bout-card { position: static; width: 100%; padding: 14px; transform: none; }
     .control-panel .wrestler-name { font-size: clamp(16px, 3vw, 28px); }
     .control-panel .matchup { gap: 12px; margin-top: 12px; }
-    .control-panel .rank { margin-top: 5px; font-size: 12px; }
-    .control-panel .record { margin-top: 5px; font-size: 16px; }
+    .control-panel .rank-record { gap: 8px; margin-top: 5px; }
+    .control-panel .rank { font-size: 12px; }
+    .control-panel .record { font-size: 16px; }
     .control-panel .head-to-head { margin-top: 12px; font-size: 16px; }
+    #winner-status { margin: 8px 0 0; color: #c2c8d0; font-size: 12px; text-align: center; }
+    .winner-buttons button:first-child { background: #258b43; color: #fff; }
+    .winner-buttons button:last-child { background: #7139ad; color: #fff; }
     .buttons { display: flex; gap: 8px; margin-top: 10px; }
     .division-jump { display: flex; align-items: end; gap: 8px; margin-top: 10px;
       padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
@@ -42,6 +46,7 @@
     @media (max-width: 520px) {
       .control-panel .bout-card { padding: 12px; }
       .control-panel .matchup { gap: 8px; }
+      .control-panel .rank-record { gap: 6px; }
       .mode-row { align-items: flex-start; flex-direction: column; }
       .division-jump { align-items: stretch; }
       .pre-match-controls { grid-template-columns: 1fr; }
@@ -54,22 +59,39 @@
   <main class="control-panel">
     <h1>Sumo Overlay Controls</h1>
     <section id="bout-card" class="bout-card pre-match-card" aria-live="polite">
-      <div class="bout-meta"><span>SUMO</span><span id="bout-number"></span></div>
+      <div class="bout-meta">
+        <span>SUMO</span>
+        <span class="bout-meta-right">
+          <span id="bout-number"></span>
+          <span id="bouts-until-next-stage"></span>
+        </span>
+      </div>
       <div class="matchup">
         <section class="wrestler east">
           <div id="east-name" class="wrestler-name"></div>
-          <div id="east-rank" class="rank"></div>
-          <div id="east-record" class="record"></div>
+          <div class="rank-record">
+            <div id="east-rank" class="rank"></div>
+            <div id="east-record" class="record"></div>
+          </div>
         </section>
         <div class="versus">VS</div>
         <section class="wrestler west">
           <div id="west-name" class="wrestler-name"></div>
-          <div id="west-rank" class="rank"></div>
-          <div id="west-record" class="record"></div>
+          <div class="rank-record">
+            <div id="west-rank" class="rank"></div>
+            <div id="west-record" class="record"></div>
+          </div>
         </section>
       </div>
       <div id="head-to-head" class="head-to-head"></div>
     </section>
+    <p id="winner-status" role="status">
+      Select the winner to show the result on the overlays until the bout changes.
+    </p>
+    <div class="buttons winner-buttons">
+      <button id="east-wins" type="button">East Wins</button>
+      <button id="west-wins" type="button">West Wins</button>
+    </div>
     <div class="buttons">
       <button id="prev" type="button">Previous Bout</button>
       <button id="next" type="button">Next Bout</button>
@@ -110,21 +132,63 @@
     let currentMode = "manual";
     let preMatchPinned = false;
     let preMatchSecondsDirty = false;
-    function recordText(record) {
-      return record ? `${record.wins}-${record.losses}` : "Record unavailable";
+    let controlSocket = null;
+    let currentBoutKey = null;
+    function renderBoutRecord(side, record, threshold) {
+      const container = document.getElementById(`${side}-record`);
+      container.replaceChildren();
+      if (!record) {
+        container.textContent = "Record unavailable";
+        return;
+      }
+
+      const wins = document.createElement(
+        typeof record.wins === "number" && record.wins >= threshold ? "strong" : "span"
+      );
+      wins.textContent = String(record.wins);
+      const losses = document.createElement(
+        typeof record.losses === "number" && record.losses >= threshold ? "strong" : "span"
+      );
+      losses.textContent = String(record.losses);
+      container.append(wins, document.createTextNode("-"), losses);
     }
     function renderBout(state) {
+      const boutKey = [
+        state.settings && state.settings.bashoId,
+        state.settings && state.settings.day,
+        state.division,
+        state.matchNo,
+        state.index,
+      ].join(":");
+      if (currentBoutKey !== null && currentBoutKey !== boutKey) {
+        document.getElementById("winner-status").textContent =
+          "Winner result cleared for the new bout.";
+      }
+      currentBoutKey = boutKey;
+      if (state.announcedWinner) {
+        document.getElementById("winner-status").textContent =
+          `${state.announcedWinner === "east" ? "East" : "West"} win shown until the bout changes.`;
+      }
       document.getElementById("bout-number").textContent =
         `BOUT ${state.matchNo} · ${state.index + 1}/${state.total}`;
+      const nextStage = document.getElementById("bouts-until-next-stage");
+      if (state.boutsUntilNextStage === null || state.boutsUntilNextStage === undefined) {
+        nextStage.textContent = "";
+      } else {
+        const target = state.divisionNumber === 1 ? "Sanyaku" : "next division";
+        const boutWord = state.boutsUntilNextStage === 1 ? "bout" : "bouts";
+        nextStage.textContent = `${state.boutsUntilNextStage} ${boutWord} until ${target}`;
+      }
       document.getElementById("east-name").textContent = state.east.name;
       document.getElementById("west-name").textContent = state.west.name;
       document.getElementById("east-rank").textContent = state.east.rank || "";
       document.getElementById("west-rank").textContent = state.west.rank || "";
-      document.getElementById("east-record").textContent = recordText(state.east.record);
-      document.getElementById("west-record").textContent = recordText(state.west.record);
+      const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
+      renderBoutRecord("east", state.east.record, emphasisThreshold);
+      renderBoutRecord("west", state.west.record, emphasisThreshold);
       if (state.headToHead) {
         document.getElementById("head-to-head").textContent =
-          `Head to head: ${state.headToHead.eastWins} - ${state.headToHead.westWins} (${state.headToHead.total} prior completed bouts)`;
+          `Head to head: ${state.headToHead.eastWins} - ${state.headToHead.westWins} (${state.headToHead.total} bouts)`;
       }
     }
     function renderSettings(response) {
@@ -200,6 +264,26 @@
     function setBusy(busy) {
       buttons.forEach(button => button.disabled = busy);
     }
+    function announceWinner(winner) {
+      document.getElementById("error").textContent = "";
+      document.getElementById("winner-status").textContent =
+        `Showing ${winner === "east" ? "East" : "West"} as the winner…`;
+      fetch("/api/control/winner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ winner })
+      })
+        .then(async response => {
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Unable to show winner");
+          renderBout(payload);
+        })
+        .catch(error => {
+          document.getElementById("winner-status").textContent =
+            "Winner was not shown.";
+          document.getElementById("error").textContent = error.message;
+        });
+    }
     fetch("/api/state")
       .then(response => {
         if (!response.ok) throw new Error("Unable to load bout state");
@@ -213,6 +297,8 @@
       .catch(error => console.error(error));
     document.getElementById("prev").addEventListener("click", () => move("prev"));
     document.getElementById("next").addEventListener("click", () => move("next"));
+    document.getElementById("east-wins").addEventListener("click", () => announceWinner("east"));
+    document.getElementById("west-wins").addEventListener("click", () => announceWinner("west"));
     document.getElementById("division-jump").addEventListener("submit", jumpToDivision);
     document.getElementById("mode-toggle").addEventListener("click", toggleMode);
     document.getElementById("pre-match-pin").addEventListener("click", togglePinnedPreMatch);
@@ -221,8 +307,8 @@
       preMatchSecondsDirty = true;
     });
     if (typeof io === "function") {
-      const socket = io();
-      socket.on("bout_update", state => {
+      controlSocket = io();
+      controlSocket.on("bout_update", state => {
         renderBout(state);
         if (state.settings) {
           renderSettings({
@@ -237,10 +323,17 @@
           });
         }
       });
-      socket.on("pre_match_update", renderBout);
-      socket.on("pre_match_error", payload =>
+      controlSocket.on("pre_match_update", renderBout);
+      controlSocket.on("bout_result", state => {
+        renderBout(state);
+        document.getElementById("winner-status").textContent =
+          `${state.announcedWinner === "east" ? "East" : "West"} win shown until the bout changes.`;
+      });
+      controlSocket.on("control_error", payload =>
         document.getElementById("error").textContent = payload.error);
-      socket.on("connect_error", error => document.getElementById("error").textContent =
+      controlSocket.on("pre_match_error", payload =>
+        document.getElementById("error").textContent = payload.error);
+      controlSocket.on("connect_error", error => document.getElementById("error").textContent =
         `Control connection failed: ${error.message}`);
     } else {
       window.setInterval(() => {

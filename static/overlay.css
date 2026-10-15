@@ -81,6 +81,14 @@ body {
   color: #e8bd68;
   font-variant-numeric: tabular-nums;
   font-size: 12px;
+  font-weight: 400;
+}
+
+.main-record strong {
+  color: #e8bd68;
+  font-size: 1.12em;
+  font-weight: 900 !important;
+  text-shadow: .35px 0 currentColor, -.35px 0 currentColor;
 }
 
 .main-rank {
@@ -194,11 +202,14 @@ body {
 .record {
   color: #e8bd68;
   font-size: clamp(26px, 3vw, 54px);
-  font-weight: 800;
+  font-weight: 400;
 }
 
 .record strong {
-  font-weight: 900;
+  color: #e8bd68;
+  font-size: 1.12em;
+  font-weight: 900 !important;
+  text-shadow: .35px 0 currentColor, -.35px 0 currentColor;
 }
 
 .versus {

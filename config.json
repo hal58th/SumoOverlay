@@ -1,7 +1,7 @@
 {
   "basho_id": "202609",
   "division": 0,
-  "day": 1,
+  "day": 15,
   "api": {
     "base_url": "https://sumo-api.com/api",
     "timeout_seconds": 15
@@ -12,7 +12,7 @@
     "watch_interval_seconds": 1
   },
   "control": {
-    "mode": "manual",
+    "mode": "automated",
     "pre_match_seconds": 20,
     "pre_match_pinned": true
   },

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Main Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=3) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -67,8 +67,23 @@
       return `${abbreviations[match[1].toLowerCase()]}${match[2] || ""}${side}`;
     }
 
-    function recordText(record) {
-      return record ? `${record.wins}-${record.losses}` : "—";
+    function renderBoutRecord(side, record, threshold) {
+      const container = document.getElementById(`${side}-record`);
+      container.replaceChildren();
+      if (!record) {
+        container.textContent = "—";
+        return;
+      }
+
+      const wins = document.createElement(
+        typeof record.wins === "number" && record.wins >= threshold ? "strong" : "span"
+      );
+      wins.textContent = String(record.wins);
+      const losses = document.createElement(
+        typeof record.losses === "number" && record.losses >= threshold ? "strong" : "span"
+      );
+      losses.textContent = String(record.losses);
+      container.append(wins, document.createTextNode("-"), losses);
     }
 
     function divisionLabel(division) {
@@ -90,8 +105,9 @@
       document.getElementById("division").textContent = divisionLabel(state.division);
       document.getElementById("east-name").textContent = state.east.name;
       document.getElementById("west-name").textContent = state.west.name;
-      document.getElementById("east-record").textContent = recordText(state.east.record);
-      document.getElementById("west-record").textContent = recordText(state.west.record);
+      const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
+      renderBoutRecord("east", state.east.record, emphasisThreshold);
+      renderBoutRecord("west", state.west.record, emphasisThreshold);
       document.getElementById("east-rank").textContent = abbreviatedRank(state.east.rank);
       document.getElementById("west-rank").textContent = abbreviatedRank(state.west.rank);
       mainOverlay.hidden = false;
@@ -111,6 +127,7 @@
     if (typeof io === "function") {
       const socket = io();
       socket.on("bout_update", renderBout);
+      socket.on("bout_result", renderBout);
       socket.on("connect_error", error => console.error("Overlay connection failed:", error));
     } else {
       window.setInterval(() => {

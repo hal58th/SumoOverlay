@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Pre-Match Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=3) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -47,6 +47,7 @@
     let hideTimer = null;
     let lastBoutKey = null;
     let lastTimerKey = null;
+    let lastRecordKey = null;
     let lastPinned = null;
     const MIN_NAME_FONT_SIZE = 10;
 
@@ -85,11 +86,24 @@
       return record ? `${record.wins}-${record.losses}` : "Record unavailable";
     }
 
-    function renderBoutRecord(side, record, emphasized) {
+    function renderBoutRecord(side, record, threshold) {
       const container = document.getElementById(`${side}-record`);
-      const value = document.createElement(emphasized ? "strong" : "span");
-      value.textContent = recordText(record);
-      container.replaceChildren(value);
+      if (!record) {
+        const unavailable = document.createElement("span");
+        unavailable.textContent = recordText(record);
+        container.replaceChildren(unavailable);
+        return;
+      }
+
+      const wins = document.createElement(
+        typeof record.wins === "number" && record.wins >= threshold ? "strong" : "span"
+      );
+      wins.textContent = String(record.wins);
+      const losses = document.createElement(
+        typeof record.losses === "number" && record.losses >= threshold ? "strong" : "span"
+      );
+      losses.textContent = String(record.losses);
+      container.replaceChildren(wins, document.createTextNode("-"), losses);
     }
 
     function monthsBetweenBashos(start, end) {
@@ -223,20 +237,9 @@
       document.getElementById("west-name").textContent = state.west.name;
       document.getElementById("east-rank").textContent = state.east.rank || "Rank unavailable";
       document.getElementById("west-rank").textContent = state.west.rank || "Rank unavailable";
-      const eastBoutScore = state.east.record &&
-        state.east.record.wins + state.east.record.losses > 0
-        ? state.east.record.wins / (state.east.record.wins + state.east.record.losses)
-        : null;
-      const westBoutScore = state.west.record &&
-        state.west.record.wins + state.west.record.losses > 0
-        ? state.west.record.wins / (state.west.record.wins + state.west.record.losses)
-        : null;
-      const boutScoreComparison = {
-        east: eastBoutScore !== null && westBoutScore !== null && eastBoutScore > westBoutScore,
-        west: eastBoutScore !== null && westBoutScore !== null && westBoutScore > eastBoutScore
-      };
-      renderBoutRecord("east", state.east.record, boutScoreComparison.east);
-      renderBoutRecord("west", state.west.record, boutScoreComparison.west);
+      const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
+      renderBoutRecord("east", state.east.record, emphasisThreshold);
+      renderBoutRecord("west", state.west.record, emphasisThreshold);
       const profiles = state.wrestlerProfiles || {};
       const eastProfile = profiles.east || {};
       const westProfile = profiles.west || {};
@@ -334,6 +337,14 @@
         state.settings && state.settings.preMatchSeconds,
         state.settings && state.settings.preMatchPinned
       ].join(":");
+      const recordKey = [
+        state.east.record && state.east.record.wins,
+        state.east.record && state.east.record.losses,
+        state.west.record && state.west.record.wins,
+        state.west.record && state.west.record.losses
+      ].join(":");
+      const recordChanged = recordKey !== lastRecordKey;
+      lastRecordKey = recordKey;
       if (boutKey !== lastBoutKey || timerKey !== lastTimerKey) {
         const pinned = Boolean(state.settings && state.settings.preMatchPinned);
         const justUnpinned = lastPinned === true && !pinned;
@@ -341,6 +352,10 @@
         lastTimerKey = timerKey;
         lastPinned = pinned;
         renderBout(state, justUnpinned);
+      } else if (recordChanged) {
+        const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
+        renderBoutRecord("east", state.east.record, emphasisThreshold);
+        renderBoutRecord("west", state.west.record, emphasisThreshold);
       }
     }
 
@@ -361,6 +376,9 @@
       const socket = io();
       socket.on("bout_update", updateOverlayPosition);
       socket.on("pre_match_update", receiveBout);
+      socket.on("bout_result", state => {
+        receiveBout(state);
+      });
       socket.on("pre_match_error", payload => showError(payload.error));
       socket.on("connect_error", error => showError(`Overlay connection failed: ${error.message}`));
     } else {

@@ -141,6 +141,97 @@ def test_socket_control_surfaces_refresh_error():
     socket_client.disconnect()
 
 
+def test_announcing_winner_updates_overlay_scores_without_refreshing_h2h():
+    class CountingH2HSchedule(FakeSchedule):
+        h2h_calls = 0
+
+        def head_to_head(self, bout):
+            self.h2h_calls += 1
+            return super().head_to_head(bout)
+
+    schedule = CountingH2HSchedule([make_bout(1, 10, 11)])
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+    socket_client = app.extensions["socketio"].test_client(app)
+    socket_client.get_received()
+    h2h_calls_before_result = schedule.h2h_calls
+
+    socket_client.emit("announce_winner", {"winner": "east"})
+
+    events = socket_client.get_received()
+    result = next(event["args"][0] for event in events if event["name"] == "bout_result")
+    assert result["east"]["record"] == {"wins": 2, "losses": 0}
+    assert result["west"]["record"] == {"wins": 0, "losses": 2}
+    assert result["announcedWinner"] == "east"
+    assert "recordEmphasis" not in result
+    assert schedule.h2h_calls == h2h_calls_before_result
+    socket_client.disconnect()
+
+
+def test_http_winner_action_works_without_socket_and_makes_no_api_requests():
+    class CountingSchedule(FakeSchedule):
+        h2h_calls = 0
+
+        def head_to_head(self, bout):
+            self.h2h_calls += 1
+            return super().head_to_head(bout)
+
+    schedule = CountingSchedule([make_bout(1, 10, 11)])
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+
+    response = app.test_client().post(
+        "/api/control/winner", json={"winner": "west"}
+    )
+
+    assert response.status_code == 200
+    assert response.json["west"]["record"] == {"wins": 1, "losses": 1}
+    assert response.json["east"]["record"] == {"wins": 1, "losses": 1}
+    assert response.json["announcedWinner"] == "west"
+    assert "recordEmphasis" not in response.json
+    assert schedule.h2h_calls == 0
+
+
+def test_announced_winner_is_cleared_when_manually_moving_between_bouts():
+    schedule = FakeSchedule(
+        [make_bout(1, 10, 11), make_bout(2, 12, 13), make_bout(3, 14, 15)]
+    )
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+    client = app.test_client()
+    socket_client = app.extensions["socketio"].test_client(app)
+    socket_client.get_received()
+
+    socket_client.emit("announce_winner", {"winner": "east"})
+    assert any(
+        event["name"] == "bout_result"
+        for event in socket_client.get_received()
+    )
+    next_response = client.post("/api/control/next")
+    previous_response = client.post("/api/control/prev")
+
+    assert next_response.json["east"]["record"] == {"wins": 1, "losses": 0}
+    assert previous_response.json["matchNo"] == 1
+    assert previous_response.json["east"]["record"] == {"wins": 1, "losses": 0}
+    assert previous_response.json["west"]["record"] == {"wins": 0, "losses": 1}
+    socket_client.disconnect()
+
+
+def test_announced_winner_rejects_invalid_side():
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    socket_client = app.extensions["socketio"].test_client(app)
+    socket_client.get_received()
+
+    socket_client.emit("announce_winner", {"winner": "north"})
+
+    assert any(
+        event["name"] == "control_error"
+        for event in socket_client.get_received()
+    )
+    socket_client.disconnect()
+
+
 def test_pages_and_kanji_lookup_are_available():
     schedule = FakeSchedule([make_bout(1, 10, 11)], kanji_lookup={"栃大海": "Tochitaikai"})
     app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
@@ -152,7 +243,11 @@ def test_pages_and_kanji_lookup_are_available():
     assert main_overlay.status_code == 200
     assert 'Makuuchi: 1' in main_overlay.text
     assert "return number ? `Div ${number}` : \"Division\";" in main_overlay.text
-    assert client.get("/control").status_code == 200
+    control = client.get("/control")
+    assert control.status_code == 200
+    assert 'id="bouts-until-next-stage"' in control.text
+    assert 'class="rank-record"' in control.text
+    assert '`${state.boutsUntilNextStage} ${boutWord} until ${target}`' in control.text
     assert client.get("/api/lookup").json == {"栃大海": "Tochitaikai"}
     assert client.get("/api/state").json["headToHead"] is None
 
