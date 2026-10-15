@@ -224,7 +224,9 @@ Both pages have transparent backgrounds and update live. The main strip remains 
 
 ## Head-to-head and replay safety
 
-The H2H card uses sumo-api.com's `/api/rikishi/{id}/matches/{opponentId}` data. It counts only completed meetings before the selected bout, including earlier matches in the same basho, and excludes the selected bout and later bouts so a replay does not reveal its result. The arrow history is ordered oldest to newest; green left arrows indicate wins by the wrestler on the left, and purple right arrows indicate wins by the wrestler on the right. If an API response is incomplete or malformed, the pre-match endpoint reports an error rather than presenting a misleading record.
+The H2H card uses sumo-api.com's `/api/rikishi/{id}/matches/{opponentId}` data. It counts only completed meetings before the selected bout, including earlier matches in the same basho, and excludes the selected bout and later bouts so a replay does not reveal its result. The arrow history is ordered oldest to newest; green left arrows indicate wins by the wrestler on the left, and purple right arrows indicate wins by the wrestler on the right.
+
+The card also shows each wrestler's age, height, weight, stable (`heya`), and place of origin (`shusshin`) when available, with one labeled detail per line. Age is shown as completed years and months, rounded down, using the computer's current date. Height is shown in centimeters and feet/inches; weight is shown in kilograms and pounds. These details come from sumo-api.com's `/api/rikishi/{id}` profiles and are cached for the running app. Stable, height, weight, and origin are the profile's latest values, not historical values from the selected replay date. Missing optional profile fields are omitted. If an API response is incomplete or malformed, the pre-match endpoint reports an error rather than presenting a misleading head-to-head record.
 
 Basho records are calculated from completed earlier-day bouts and earlier bouts on the selected day. Winners and winning techniques are not sent to the overlays. If an earlier result is unavailable, the record is shown as unavailable rather than guessed.
 

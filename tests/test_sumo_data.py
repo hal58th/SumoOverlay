@@ -174,6 +174,50 @@ def test_schedule_fetches_ocr_profiles_concurrently():
     assert schedule.kanji_lookup["力士1"] == "Rikishi1"
 
 
+def test_schedule_returns_cached_broadcast_profile_details():
+    class FakeClient:
+        def __init__(self):
+            self.profile_calls = []
+
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            self.profile_calls.append(rikishi_id)
+            return {
+                "birthDate": "2000-06-07T00:00:00Z",
+                "heya": "Nishonoseki",
+                "height": 190,
+                "weight": 188,
+                "shusshin": "Ishikawa",
+                "unrelated": "not exposed",
+            }
+
+    client = FakeClient()
+    schedule = BashoSchedule(client, "202505", "Makuuchi", 1)
+    bout = schedule.bouts[0]
+
+    profiles = schedule.wrestler_profiles(bout)
+    assert profiles == {
+        "east": {
+            "birthDate": "2000-06-07T00:00:00Z",
+            "heya": "Nishonoseki",
+            "height": 190,
+            "weight": 188,
+            "shusshin": "Ishikawa",
+        },
+        "west": {
+            "birthDate": "2000-06-07T00:00:00Z",
+            "heya": "Nishonoseki",
+            "height": 190,
+            "weight": 188,
+            "shusshin": "Ishikawa",
+        },
+    }
+    schedule.wrestler_profiles(bout)
+    assert client.profile_calls == [1, 2]
+
+
 def test_cached_sumo_api_snapshot_supports_all_divisions_and_safe_h2h(sumo_api_client):
     schedule = BashoSchedule(sumo_api_client, "202505", None, 1)
     onosato_vs_wakamotoharu = next(

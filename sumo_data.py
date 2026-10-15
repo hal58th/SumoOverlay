@@ -272,6 +272,7 @@ class BashoSchedule:
         self.day = day
         self._divisions = DIVISION_ORDER if division is None else (division,)
         self._h2h_cache: dict[tuple[int, int], list[dict[str, Any]]] = {}
+        self._rikishi_cache: dict[int, dict[str, Any]] = {}
         self._prior_days = [
             self._fetch_day(current_day)
             for current_day in range(1, day)
@@ -314,7 +315,7 @@ class BashoSchedule:
             with ThreadPoolExecutor(
                 max_workers=min(8, len(self._profile_ids))
             ) as executor:
-                profiles = list(executor.map(self.client.fetch_rikishi, self._profile_ids))
+                profiles = list(executor.map(self._fetch_rikishi, self._profile_ids))
             self._kanji_lookup = build_kanji_lookup(profiles)
         return self._kanji_lookup
 
@@ -330,6 +331,40 @@ class BashoSchedule:
         self._current_day = current_day
         self._bouts = bouts
         return self._bouts
+
+    def _fetch_rikishi(self, rikishi_id: int) -> dict[str, Any]:
+        if rikishi_id not in self._rikishi_cache:
+            self._rikishi_cache[rikishi_id] = self.client.fetch_rikishi(rikishi_id)
+        return self._rikishi_cache[rikishi_id]
+
+    def wrestler_profiles(self, bout: Bout) -> dict[str, dict[str, Any]]:
+        """Return broadcast-safe profile details for both participants."""
+        profiles: dict[str, dict[str, Any]] = {}
+        for side, participant in (("east", bout.east), ("west", bout.west)):
+            profile = self._fetch_rikishi(participant.rikishi_id)
+
+            def text_field(name: str) -> str | None:
+                value = profile.get(name)
+                return value.strip() if isinstance(value, str) and value.strip() else None
+
+            def measurement_field(name: str) -> int | float | None:
+                value = profile.get(name)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or value <= 0
+                ):
+                    return None
+                return value
+
+            profiles[side] = {
+                "birthDate": text_field("birthDate"),
+                "heya": text_field("heya"),
+                "height": measurement_field("height"),
+                "weight": measurement_field("weight"),
+                "shusshin": text_field("shusshin"),
+            }
+        return profiles
 
     def head_to_head(self, bout: Bout) -> dict[str, Any]:
         pair = (

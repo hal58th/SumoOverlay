@@ -65,6 +65,9 @@ class BoutController:
             payload["headToHead"] = (
                 head_to_head(bout) if include_head_to_head and callable(head_to_head) else None
             )
+            wrestler_profiles = getattr(self._schedule, "wrestler_profiles", None)
+            if include_head_to_head and callable(wrestler_profiles):
+                payload["wrestlerProfiles"] = wrestler_profiles(bout)
             return payload
 
     @property

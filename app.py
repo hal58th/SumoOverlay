@@ -85,13 +85,20 @@ def create_app(
         return result
 
     def broadcast_state(update_pre_match: bool) -> None:
-        socketio.emit("bout_update", public_state())
+        pre_match_state = None
         if update_pre_match:
             try:
-                socketio.emit("pre_match_update", public_state(include_head_to_head=True))
+                state = public_state(include_head_to_head=True)
+                pre_match_state = state
             except SumoApiError as error:
                 app.logger.error("Unable to update head-to-head display: %s", error)
                 socketio.emit("pre_match_error", {"error": str(error)})
+                state = public_state()
+        else:
+            state = public_state()
+        socketio.emit("bout_update", state)
+        if pre_match_state is not None:
+            socketio.emit("pre_match_update", pre_match_state)
 
     def reload_settings(new_settings: dict[str, Any]) -> None:
         nonlocal active_settings
@@ -124,14 +131,19 @@ def create_app(
         selected = controller.select_bout_by_kanji(left_name, right_name)
         if selected is None:
             return None
-        state = public_state()
-        if state["index"] != previous_index:
-            socketio.emit("bout_update", state)
+        changed = controller.state()["index"] != previous_index
+        pre_match_state = None
         try:
-            socketio.emit("pre_match_update", public_state(include_head_to_head=True))
+            state = public_state(include_head_to_head=True)
+            pre_match_state = state
         except SumoApiError as error:
             app.logger.error("Unable to update head-to-head display after OCR: %s", error)
             socketio.emit("pre_match_error", {"error": str(error)})
+            state = public_state()
+        if changed:
+            socketio.emit("bout_update", state)
+        if pre_match_state is not None:
+            socketio.emit("pre_match_update", pre_match_state)
         return state
 
     def current_settings() -> dict[str, Any]:
@@ -223,14 +235,17 @@ def create_app(
         except SumoApiError as error:
             app.logger.error("Unable to update bout state: %s", error)
             return jsonify({"error": str(error)}), 502
-        socketio.emit("bout_update", state)
+        pre_match_state = None
         if state["index"] != old_index:
             try:
                 state = public_state(include_head_to_head=True)
-                socketio.emit("pre_match_update", state)
+                pre_match_state = state
             except SumoApiError as error:
                 app.logger.error("Unable to update head-to-head display: %s", error)
                 socketio.emit("pre_match_error", {"error": str(error)})
+        socketio.emit("bout_update", state)
+        if pre_match_state is not None:
+            socketio.emit("pre_match_update", pre_match_state)
         return jsonify(state)
 
     @app.post("/api/control/next")
@@ -260,14 +275,17 @@ def create_app(
         except SumoApiError as error:
             app.logger.error("Unable to jump to division %s: %s", division, error)
             return jsonify({"error": str(error)}), 502
-        socketio.emit("bout_update", state)
+        pre_match_state = None
         if state["index"] != old_index:
             try:
                 state = public_state(include_head_to_head=True)
-                socketio.emit("pre_match_update", state)
+                pre_match_state = state
             except SumoApiError as error:
                 app.logger.error("Unable to update head-to-head display: %s", error)
                 socketio.emit("pre_match_error", {"error": str(error)})
+        socketio.emit("bout_update", state)
+        if pre_match_state is not None:
+            socketio.emit("pre_match_update", pre_match_state)
         return jsonify(state)
 
     @app.post("/api/control/mode")
@@ -325,15 +343,17 @@ def create_app(
     @socketio.on("connect")
     def send_initial_state() -> None:
         try:
-            emit("bout_update", public_state())
+            state = public_state(include_head_to_head=True)
+            emit("bout_update", state)
+            emit("pre_match_update", state)
         except SumoApiError as error:
-            app.logger.error("Unable to send initial bout state: %s", error)
-            emit("state_error", {"error": str(error)})
-        try:
-            emit("pre_match_update", public_state(include_head_to_head=True))
-        except SumoApiError as error:
-            app.logger.error("Unable to send initial head-to-head state: %s", error)
+            app.logger.error("Unable to send initial state with head-to-head: %s", error)
             emit("pre_match_error", {"error": str(error)})
+            try:
+                emit("bout_update", public_state())
+            except SumoApiError as state_error:
+                app.logger.error("Unable to send initial bout state: %s", state_error)
+                emit("state_error", {"error": str(state_error)})
 
     @socketio.on("control")
     def socket_control(message: Any) -> None:
@@ -348,17 +368,17 @@ def create_app(
             app.logger.error("Unable to update bout state: %s", error)
             emit("control_error", {"error": str(error)})
             return
-        emit("bout_update", state, broadcast=True)
+        pre_match_state = None
         if state["index"] != old_index:
             try:
-                emit(
-                    "pre_match_update",
-                    public_state(include_head_to_head=True),
-                    broadcast=True,
-                )
+                state = public_state(include_head_to_head=True)
+                pre_match_state = state
             except SumoApiError as error:
                 app.logger.error("Unable to update head-to-head display: %s", error)
                 emit("pre_match_error", {"error": str(error)}, broadcast=True)
+        emit("bout_update", state, broadcast=True)
+        if pre_match_state is not None:
+            emit("pre_match_update", pre_match_state, broadcast=True)
 
     return app
 

@@ -49,10 +49,40 @@ def test_manual_controls_update_state_and_emit_websocket_event():
     assert response.json["index"] == 1
     assert schedule.refresh_count == 1
     events = socket_client.get_received()
-    assert any(event["name"] == "bout_update" for event in events)
+    assert any(
+        event["name"] == "bout_update"
+        and event["args"][0]["headToHead"] is not None
+        for event in events
+    )
     assert any(
         event["name"] == "pre_match_update"
         and event["args"][0]["headToHead"] is not None
+        for event in events
+    )
+    socket_client.disconnect()
+
+
+def test_failed_head_to_head_refresh_does_not_publish_unavailable_pre_match_state():
+    class FailingH2HSchedule(FakeSchedule):
+        def head_to_head(self, bout):
+            raise SumoApiError("H2H API unavailable")
+
+    schedule = FailingH2HSchedule([make_bout(1, 10, 11), make_bout(2, 12, 13)])
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+    client = app.test_client()
+    socket_client = app.extensions["socketio"].test_client(app)
+    socket_client.get_received()
+
+    response = client.post("/api/control/next")
+
+    assert response.status_code == 200
+    assert response.json["matchNo"] == 2
+    events = socket_client.get_received()
+    assert any(event["name"] == "pre_match_error" for event in events)
+    assert not any(event["name"] == "pre_match_update" for event in events)
+    assert any(
+        event["name"] == "bout_update"
+        and event["args"][0]["headToHead"] is None
         for event in events
     )
     socket_client.disconnect()
@@ -142,6 +172,25 @@ def test_head_to_head_is_served_by_the_pre_match_state_route():
         "total": 5,
         "history": [],
     }
+
+
+def test_pre_match_state_includes_wrestler_profiles():
+    class ProfileSchedule(FakeSchedule):
+        def wrestler_profiles(self, bout):
+            return {
+                "east": {"heya": "East Stable", "height": 190, "weight": 188},
+                "west": {"heya": "West Stable", "height": 180, "weight": 150},
+            }
+
+    schedule = ProfileSchedule([make_bout(1, 10, 11)])
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+    client = app.test_client()
+
+    state = client.get("/api/pre-match-state").json
+
+    assert state["wrestlerProfiles"]["east"]["heya"] == "East Stable"
+    assert state["wrestlerProfiles"]["west"]["weight"] == 150
+    assert "wrestlerProfiles" not in client.get("/api/state").json
 
 
 def test_pre_match_state_counts_division_bouts_and_sanyaku_transition():

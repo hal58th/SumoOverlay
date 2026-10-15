@@ -23,6 +23,7 @@
           <div id="east-rank" class="rank"></div>
           <div id="east-record" class="record"></div>
         </div>
+        <div id="east-profile" class="wrestler-profile"></div>
       </section>
       <div class="versus">VS</div>
       <section class="wrestler west">
@@ -31,6 +32,7 @@
           <div id="west-rank" class="rank"></div>
           <div id="west-record" class="record"></div>
         </div>
+        <div id="west-profile" class="wrestler-profile"></div>
       </section>
     </div>
     <div class="head-to-head">
@@ -64,6 +66,68 @@
       return record ? `${record.wins}-${record.losses}` : "Record unavailable";
     }
 
+    function ageFromBirthDate(birthDate) {
+      if (typeof birthDate !== "string") return null;
+      const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(birthDate);
+      if (!match) return null;
+      const [, yearText, monthText, dayText] = match;
+      const year = Number(yearText);
+      const month = Number(monthText);
+      const day = Number(dayText);
+      const birth = new Date(Date.UTC(year, month - 1, day));
+      if (
+        birth.getUTCFullYear() !== year ||
+        birth.getUTCMonth() !== month - 1 ||
+        birth.getUTCDate() !== day
+      ) return null;
+      const today = new Date();
+      let months = (today.getFullYear() - year) * 12 + today.getMonth() - (month - 1);
+      if (today.getDate() < day) months--;
+      if (months < 0) return null;
+      return { years: Math.floor(months / 12), months: months % 12 };
+    }
+
+    function heightText(heightCm) {
+      if (typeof heightCm !== "number" || heightCm <= 0) return null;
+      const totalInches = Math.round(heightCm / 2.54);
+      const feet = Math.floor(totalInches / 12);
+      const inches = totalInches % 12;
+      return `Height: ${heightCm} cm (${feet}'${inches}")`;
+    }
+
+    function weightText(weightKg) {
+      if (typeof weightKg !== "number" || weightKg <= 0) return null;
+      const pounds = Math.round(weightKg * 2.2046226218);
+      return `Weight: ${weightKg} kg (${pounds} lb)`;
+    }
+
+    function renderWrestlerProfile(side, profile) {
+      const lines = [];
+      const age = profile && ageFromBirthDate(profile.birthDate);
+      if (age) {
+        lines.push(`Age: ${age.years} years, ${age.months} months`);
+      }
+      if (profile) {
+        const height = heightText(profile.height);
+        const weight = weightText(profile.weight);
+        if (height) lines.push(height);
+        if (weight) lines.push(weight);
+        if (typeof profile.heya === "string" && profile.heya) {
+          lines.push(`Stable (heya): ${profile.heya}`);
+        }
+        if (typeof profile.shusshin === "string" && profile.shusshin) {
+          lines.push(`Place of origin (shusshin): ${profile.shusshin}`);
+        }
+      }
+      const container = document.getElementById(`${side}-profile`);
+      container.replaceChildren(...lines.map(text => {
+        const line = document.createElement("div");
+        line.className = "wrestler-profile-line";
+        line.textContent = text;
+        return line;
+      }));
+    }
+
     function renderBout(state, suppressAutoShow = false) {
       if (!state.settings || !state.settings.overlay) return;
       updateOverlayPosition(state);
@@ -86,6 +150,9 @@
       document.getElementById("west-rank").textContent = state.west.rank || "Rank unavailable";
       document.getElementById("east-record").textContent = recordText(state.east.record);
       document.getElementById("west-record").textContent = recordText(state.west.record);
+      const profiles = state.wrestlerProfiles || {};
+      renderWrestlerProfile("east", profiles.east);
+      renderWrestlerProfile("west", profiles.west);
 
       const h2h = state.headToHead;
       const h2hScore = document.getElementById("head-to-head-score");
