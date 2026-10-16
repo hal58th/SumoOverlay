@@ -14,7 +14,7 @@
   "control": {
     "mode": "automated",
     "pre_match_seconds": 20,
-    "pre_match_pinned": true
+    "pre_match_pinned": false
   },
   "ocr": {
     "enabled": true,
@@ -38,21 +38,14 @@
     }
   },
   "overlay": {
-    "canvas": {
-      "width": 1920,
-      "height": 1080
-    },
     "main": {
-      "x": 16,
-      "y": 12,
-      "width": 640,
-      "height": 52
+      "width": 1582,
+      "height": 300
     },
     "pre_match": {
-      "x": 40,
-      "y": 40,
       "width": 1840,
-      "height": 1000
+      "height": 1000,
+      "opacity": 0.95
     }
   },
   "templates": {

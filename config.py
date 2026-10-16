@@ -49,9 +49,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         },
     },
     "overlay": {
-        "canvas": {"width": 1920, "height": 1080},
-        "main": {"x": 16, "y": 12, "width": 640, "height": 88},
-        "pre_match": {"x": 40, "y": 40, "width": 1840, "height": 1000},
+        "main": {"width": 1582, "height": 174},
+        "pre_match": {"width": 1840, "height": 1000, "opacity": 0.5},
     },
     "templates": {
         "main": "main_overlay.html",
@@ -227,27 +226,46 @@ def validate_settings(raw: Any) -> dict[str, Any]:
     settings["ocr"] = ocr
 
     overlay = settings.get("overlay")
-    if not isinstance(overlay, dict) or any(
-        not isinstance(overlay.get(key, {}), dict) for key in ("canvas", "main", "pre_match")
-    ):
+    if not isinstance(overlay, dict):
         raise SettingsError("overlay must be a JSON object")
+    unknown_overlay_keys = set(overlay) - {"main", "pre_match"}
+    if unknown_overlay_keys:
+        raise SettingsError(
+            f"Unknown overlay setting: {sorted(unknown_overlay_keys)[0]}"
+        )
     overlay_defaults = default_settings()["overlay"]
+    for key in ("main", "pre_match"):
+        section = overlay.get(key, {})
+        if not isinstance(section, dict):
+            raise SettingsError(f"overlay.{key} must be an object")
+        allowed_keys = {"width", "height"}
+        if key == "pre_match":
+            allowed_keys.add("opacity")
+        unknown_keys = set(section) - allowed_keys
+        if unknown_keys:
+            raise SettingsError(
+                f"Unknown overlay.{key} setting: {sorted(unknown_keys)[0]}"
+            )
     overlay = {
-        "canvas": {**overlay_defaults["canvas"], **overlay.get("canvas", {})},
         "main": {**overlay_defaults["main"], **overlay.get("main", {})},
         "pre_match": {**overlay_defaults["pre_match"], **overlay.get("pre_match", {})},
     }
-    for key, value in overlay["canvas"].items():
-        overlay["canvas"][key] = _positive_number(value, f"overlay.canvas.{key}")
-        if not isinstance(overlay["canvas"][key], int):
-            raise SettingsError(f"overlay.canvas.{key} must be an integer")
     for key in ("main", "pre_match"):
-        overlay[key] = _validate_bounds(overlay[key], f"overlay.{key}")
-        if (
-            overlay[key]["x"] + overlay[key]["width"] > overlay["canvas"]["width"]
-            or overlay[key]["y"] + overlay[key]["height"] > overlay["canvas"]["height"]
-        ):
-            raise SettingsError(f"overlay.{key} must fit inside overlay.canvas")
+        for dimension in ("width", "height"):
+            value = overlay[key].get(dimension)
+            overlay[key][dimension] = _positive_number(
+                value, f"overlay.{key}.{dimension}"
+            )
+            if not isinstance(overlay[key][dimension], int):
+                raise SettingsError(f"overlay.{key}.{dimension} must be an integer")
+    opacity = overlay["pre_match"]["opacity"]
+    if (
+        isinstance(opacity, bool)
+        or not isinstance(opacity, (int, float))
+        or not math.isfinite(opacity)
+        or not 0 <= opacity <= 1
+    ):
+        raise SettingsError("overlay.pre_match.opacity must be a number from 0 through 1")
     settings["overlay"] = overlay
 
     templates = settings.get("templates")

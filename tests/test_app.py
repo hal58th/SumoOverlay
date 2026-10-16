@@ -243,6 +243,36 @@ def test_pages_and_kanji_lookup_are_available():
     assert main_overlay.status_code == 200
     assert 'Makuuchi: 1' in main_overlay.text
     assert "return number ? `Div ${number}` : \"Division\";" in main_overlay.text
+    assert "fitNameToWidth" not in main_overlay.text
+    assert "state.settings.overlay.main.width}px" in main_overlay.text
+    assert "state.settings.overlay.main.height}px" in main_overlay.text
+    main_styles = client.get("/static/overlay.css").text.split(
+        ".pre-match-card {", maxsplit=1
+    )[0]
+    assert "width: 1582px;" not in main_styles
+    assert "height: 174px;" not in main_styles
+    assert "font-size: 48px;" in main_styles
+    assert "line-height: 1.25;" in main_styles
+    assert "font-size: 26px;" in main_styles
+    assert "font-size: 28px;" in main_styles
+    main_strip_styles = main_styles.split(".main-strip {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "background: #10141c;" in main_strip_styles
+    all_styles = client.get("/static/overlay.css").text
+    assert "clamp(" not in all_styles
+    assert "vw" not in all_styles
+    assert "vh" not in all_styles
+    pre_match_html = client.get("/overlay").text
+    assert (
+        "const { width, height, opacity } = state.settings.overlay.pre_match;"
+        in pre_match_html
+    )
+    assert 'preMatchOverlay.style.width = `${width}px`;' in pre_match_html
+    assert "preMatchOverlay.style.setProperty(\"--pre-match-opacity\", String(opacity));" in pre_match_html
+    assert "fitNameToWidth" not in pre_match_html
+    assert "rgb(20 25 34 / var(--pre-match-opacity, 0.5))" in all_styles
+    assert "rgb(37 42 51 / var(--pre-match-opacity, 0.5))" in all_styles
     control = client.get("/control")
     assert control.status_code == 200
     assert 'id="bouts-until-next-stage"' in control.text
@@ -279,11 +309,11 @@ def test_partial_override_config_merges_nested_values(tmp_path):
     settings_path = tmp_path / "config.json"
     override_path = tmp_path / "config.firefox.json"
     settings = default_settings()
-    settings["overlay"]["main"]["y"] = 60
+    settings["overlay"]["main"]["height"] = 200
     write_config(settings_path, settings)
     write_config(
         override_path,
-        {"ocr": {"monitor": 2}, "overlay": {"main": {"x": 140}}},
+        {"ocr": {"monitor": 2}, "overlay": {"main": {"width": 1400}}},
     )
 
     effective = load_settings(settings_path, override_path)
@@ -292,7 +322,7 @@ def test_partial_override_config_merges_nested_values(tmp_path):
     assert effective["ocr"]["interval_seconds"] == settings["ocr"]["interval_seconds"]
     assert effective["overlay"]["main"] == {
         **settings["overlay"]["main"],
-        "x": 140,
+        "width": 1400,
     }
 
 
@@ -522,6 +552,45 @@ def test_removed_pre_match_enabled_setting_is_rejected():
         validate_settings(settings)
 
 
+def test_overlay_dimensions_are_positive_integers_and_reject_position_settings():
+    settings = default_settings()
+    settings["overlay"]["main"] = {"width": 1200, "height": 180}
+    settings["overlay"]["pre_match"] = {"width": 1600, "height": 900, "opacity": 0.75}
+    validated = validate_settings(settings)
+    assert validated["overlay"] == settings["overlay"]
+
+    settings["overlay"]["main"]["width"] = 0
+    with pytest.raises(SettingsError, match="overlay.main.width"):
+        validate_settings(settings)
+
+    settings = default_settings()
+    settings["overlay"]["main"]["x"] = 10
+    with pytest.raises(SettingsError, match="Unknown overlay.main setting: x"):
+        validate_settings(settings)
+
+    settings = default_settings()
+    settings["overlay"]["canvas"] = {"width": 1920, "height": 1080}
+    with pytest.raises(SettingsError, match="Unknown overlay setting: canvas"):
+        validate_settings(settings)
+
+
+@pytest.mark.parametrize("opacity", [-0.1, 1.1, True, "0.5"])
+def test_pre_match_opacity_rejects_values_outside_unit_interval(opacity):
+    settings = default_settings()
+    settings["overlay"]["pre_match"]["opacity"] = opacity
+
+    with pytest.raises(SettingsError, match="overlay.pre_match.opacity"):
+        validate_settings(settings)
+
+
+@pytest.mark.parametrize("opacity", [0, 0.5, 1])
+def test_pre_match_opacity_accepts_values_from_zero_through_one(opacity):
+    settings = default_settings()
+    settings["overlay"]["pre_match"]["opacity"] = opacity
+
+    assert validate_settings(settings)["overlay"]["pre_match"]["opacity"] == opacity
+
+
 def test_numeric_division_is_converted_to_api_division_name(tmp_path, monkeypatch):
     settings = default_settings()
     settings["division"] = 3
@@ -705,8 +774,8 @@ def test_external_json_edit_hot_reloads_overlay_settings(tmp_path):
 
     try:
         settings["control"]["mode"] = "automated"
-        settings["overlay"]["main"]["x"] = 80
-        settings["overlay"]["pre_match"]["y"] = 50
+        settings["overlay"]["main"]["width"] = 1600
+        settings["overlay"]["pre_match"]["height"] = 900
         settings["capture_regions"]["abema_scoresheet"]["x"] = 120
         write_config(settings_path, settings)
         deadline = time.monotonic() + 3
@@ -714,13 +783,13 @@ def test_external_json_edit_hot_reloads_overlay_settings(tmp_path):
             response = client.get("/api/settings").json
             if (
                 response["settings"]["control"]["mode"] == "automated"
-                and response["settings"]["overlay"]["main"]["x"] == 80
+                and response["settings"]["overlay"]["main"]["width"] == 1600
             ):
                 break
             time.sleep(0.05)
         assert response["settings"]["control"]["mode"] == "automated"
-        assert client.get("/api/state").json["settings"]["overlay"]["main"]["x"] == 80
-        assert client.get("/api/pre-match-state").json["settings"]["overlay"]["pre_match"]["y"] == 50
+        assert client.get("/api/state").json["settings"]["overlay"]["main"]["width"] == 1600
+        assert client.get("/api/pre-match-state").json["settings"]["overlay"]["pre_match"]["height"] == 900
         assert client.get("/api/settings").json["settings"]["capture_regions"][
             "abema_scoresheet"
         ]["x"] == 120

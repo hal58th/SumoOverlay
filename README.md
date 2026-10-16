@@ -2,7 +2,7 @@
 
 This program downloads a basho's bout lists from [sumo-api.com](https://sumo-api.com), lets you move between bouts with a control page, and displays two OBS browser overlays:
 
-1. **Main overlay** — a compact, persistent strip in the top-left with the current division, wrestler names, their records before this bout, and abbreviated ranks.
+1. **Main overlay** — a persistent, opaque scoresheet overlay with the current division, wrestler names, their records before this bout, and abbreviated ranks.
 2. **Pre-match overlay** — a larger matchup card with ranks, pre-bout records, and head-to-head (H2H) wins. When enabled, it appears after a bout is selected and hides after the configured number of seconds. This timer works the same in manual and automated modes; set the duration to `0` or use the Control page toggle to turn it off.
 
 Settings are read from `config.json`. The app watches that file and reloads valid changes while it is running. Optional OCR can recognize either or both Japanese names on ABEMA's scoresheet and select the uniquely matching scheduled bout automatically. OCR uses the exact Japanese-to-English lookup from sumo-api.com; it does not translate names.
@@ -32,9 +32,9 @@ Open `config.json` in a text editor and change the values you need. Keep the bra
 | `control.mode` | `"manual"` or `"automated"`. Manual mode uses the Control page buttons. Automated mode lets OCR select a uniquely identified bout when either one or both names meet the confidence threshold for the configured number of consecutive reads. |
 | `control.pre_match_seconds` | How long, in seconds, the pre-match overlay appears after a bout change. `0` disables timed auto-show. |
 | `control.pre_match_pinned` | `true` or `false`. When true, keeps the pre-match overlay visible until you hide it from the Control page. |
-| `overlay.canvas` | The OBS browser-source design width and height, in pixels. |
-| `overlay.main` | Main overlay rectangle: top-left `x`, `y`, `width`, and `height`, in pixels on the canvas. It centers each wrestler's name over their rank and record (shown side by side); division and “VS” are in the middle. |
-| `overlay.pre_match` | Pre-match overlay rectangle, using the same pixel coordinate system. The default covers almost the full canvas. |
+| `overlay.main.width`, `overlay.main.height` | Fixed pixel width and height for the main overlay and its OBS Browser Source. |
+| `overlay.pre_match.width`, `overlay.pre_match.height` | Fixed pixel width and height for the pre-match overlay and its OBS Browser Source. |
+| `overlay.pre_match.opacity` | Background opacity of the pre-match card, from `0` (transparent) to `1` (opaque). The default is `0.5`. Text opacity is unchanged. |
 | `templates.main`, `templates.pre_match` | HTML filenames for the overlays. The app searches `custom_templates` first, then the built-in `templates` folder. |
 | `ocr.enabled` | Enables the OCR scanner when the app is started normally. |
 | `ocr.monitor` | MSS monitor number, starting at `1` for the first monitor (monitor `0` is the combined virtual desktop and is not used). |
@@ -44,7 +44,7 @@ Open `config.json` in a text editor and change the values you need. Keep the bra
 | `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `capture_regions.abema_scoresheet`. |
 | `capture_regions.abema_scoresheet` | Rectangle around the ABEMA scoresheet, in pixels relative to the selected monitor. |
 
-Both overlay rectangles must fit within `overlay.canvas`. Capture-region coordinates refer to the selected desktop monitor, not the OBS overlay canvas. OCR name-box coordinates are pixel offsets inside that capture region. If ABEMA moves its scoresheet, update the capture rectangle and/or name-box coordinates to match. The main and pre-match overlay rectangles can be adjusted separately. The default pre-match rectangle is almost full screen; the card background is 50% opaque so the broadcast remains visible behind it while the text stays fully readable.
+Each overlay's configured width and height define its complete fixed-size image in CSS pixels. There is no canvas scaling or internal positioning; place each Browser Source where you want it in OBS. Set `overlay.pre_match.opacity` from `0` to `1` to adjust only the card background transparency; the text stays fully opaque. Capture-region coordinates refer to the selected desktop monitor, not the OBS overlay. OCR name-box coordinates are pixel offsets inside the capture region. If ABEMA moves its scoresheet, update the capture rectangle and/or name-box coordinates to match.
 
 `division: 0` loads all divisions by requesting each of the six supported divisions separately; the API does not provide a working all-divisions endpoint. Bouts are combined in broadcast order. Values 1 through 6 select one division; number 1 is the top division (Makuuchi) and number 6 is Jonokuchi. Use these numeric codes in `config.json`.
 
@@ -75,7 +75,7 @@ For example, create `config.firefox.json` beside `config.json` with the capture 
 }
 ```
 
-The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor` or `overlay.main`, using their normal `config.json` structure.
+The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor` or `overlay.main.width`, using their normal `config.json` structure.
 
 Start the app with the profile you want:
 
@@ -267,14 +267,14 @@ Use **Auto-show duration** and **Save duration** to set how long the pre-match c
 
 ## OBS Studio
 
-In OBS, add two **Browser** sources and set each source's size to the `overlay.canvas` width and height in `config.json` (the included values are 1920 × 1080):
+In OBS, add two **Browser** sources:
 
-1. Main, always-on wrestler strip: `http://127.0.0.1:5000/main-overlay` (or `http://localhost:5000/main-overlay` when running in WSL).
-2. Pre-match H2H card: `http://127.0.0.1:5000/overlay` (or `http://localhost:5000/overlay` when running in WSL).
+1. Main, always-on scoresheet overlay: `http://127.0.0.1:5000/main-overlay` (or `http://localhost:5000/main-overlay` when running in WSL). Set the Browser Source width and height to `overlay.main.width` and `overlay.main.height` in `config.json`.
+2. Pre-match H2H card: `http://127.0.0.1:5000/overlay` (or `http://localhost:5000/overlay` when running in WSL). Set its Browser Source width and height to `overlay.pre_match.width` and `overlay.pre_match.height`.
 
-In OBS, select the Browser source and drag it on the preview canvas, or right-click it and choose **Transform → Edit Transform** to set its position and size. This positions the whole transparent browser canvas; `overlay.main` and `overlay.pre_match` in `config.json` position their content inside that canvas.
+In OBS, position each Browser Source on the scene as desired. The overlay content is rendered at the configured dimensions in fixed CSS pixels and does not scale to fit the browser viewport. To change an overlay's rendered size, edit its width and height in `config.json`, then use those same values for the OBS Browser Source dimensions.
 
-Both pages have transparent backgrounds and update live. The main strip remains visible. Wrestler names automatically shrink to a 10px minimum to fit their available width; if a name is still too long, it stays on one line and is truncated with an ellipsis. This sizing is recalculated when the overlay or browser source is resized. When timed auto-show is enabled with a positive duration, the pre-match card appears after every bout change and hides when the timer expires, regardless of match-control mode. You can also pin it on from the Control page until you hide it; this manual display takes precedence over the timer. The pre-match page continues running in OBS, but its HTML element becomes hidden and the browser source is transparent between bouts; the source does not need to be removed or reloaded. The pages load the Socket.IO browser client from jsDelivr and poll local state if that script is unavailable.
+Both pages update live. The main overlay has a solid opaque background so it fully covers the scoresheet; the pre-match card remains translucent, and the rest of each page is transparent. Main overlay text uses fixed pixel sizes; long wrestler names remain on one line and are truncated with an ellipsis instead of shrinking. If the main Browser source is smaller than the fixed CSS dimensions, its content will be clipped. When timed auto-show is enabled with a positive duration, the pre-match card appears after every bout change and hides when the timer expires, regardless of match-control mode. You can also pin it on from the Control page until you hide it; this manual display takes precedence over the timer. The pre-match page continues running in OBS, but its HTML element becomes hidden and the browser source is transparent between bouts; the source does not need to be removed or reloaded. The pages load the Socket.IO browser client from jsDelivr and poll local state if that script is unavailable.
 
 ## Custom overlay templates
 

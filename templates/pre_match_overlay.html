@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Pre-Match Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=3) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=5) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -49,36 +49,12 @@
     let lastTimerKey = null;
     let lastRecordKey = null;
     let lastPinned = null;
-    const MIN_NAME_FONT_SIZE = 10;
-
-    function fitNameToWidth(element) {
-      element.style.fontSize = "";
-      let fontSize = Number.parseFloat(window.getComputedStyle(element).fontSize);
-      if (!Number.isFinite(fontSize) || element.clientWidth <= 0) return;
-
-      while (fontSize > MIN_NAME_FONT_SIZE && element.scrollWidth > element.clientWidth) {
-        fontSize = Math.max(MIN_NAME_FONT_SIZE, fontSize - 1);
-        element.style.fontSize = `${fontSize}px`;
-      }
-    }
-
-    function fitWrestlerNames() {
-      document.querySelectorAll(".wrestler-name").forEach(fitNameToWidth);
-    }
-
-    window.addEventListener("resize", fitWrestlerNames);
-
-    function placeOverlay(bounds, canvas) {
-      preMatchOverlay.style.left = `${bounds.x / canvas.width * 100}%`;
-      preMatchOverlay.style.top = `${bounds.y / canvas.height * 100}%`;
-      preMatchOverlay.style.width = `${bounds.width / canvas.width * 100}%`;
-      preMatchOverlay.style.height = `${bounds.height / canvas.height * 100}%`;
-    }
-
-    function updateOverlayPosition(state) {
+    function updateOverlaySize(state) {
       if (state.settings && state.settings.overlay) {
-        placeOverlay(state.settings.overlay.pre_match, state.settings.overlay.canvas);
-        if (!preMatchOverlay.hidden) fitWrestlerNames();
+        const { width, height, opacity } = state.settings.overlay.pre_match;
+        preMatchOverlay.style.width = `${width}px`;
+        preMatchOverlay.style.height = `${height}px`;
+        preMatchOverlay.style.setProperty("--pre-match-opacity", String(opacity));
       }
     }
 
@@ -235,7 +211,7 @@
 
     function renderBout(state, suppressAutoShow = false) {
       if (!state.settings || !state.settings.overlay) return;
-      updateOverlayPosition(state);
+      updateOverlaySize(state);
       document.getElementById("division").textContent = state.division || state.settings.division;
       document.getElementById("division-number").textContent =
         `(Division ${state.divisionNumber})`;
@@ -320,7 +296,6 @@
       if (hideTimer !== null) window.clearTimeout(hideTimer);
       hideTimer = null;
       preMatchOverlay.hidden = false;
-      fitWrestlerNames();
       if (state.settings.preMatchPinned) {
         preMatchOverlay.hidden = false;
         return;
@@ -342,7 +317,7 @@
     }
 
     function receiveBout(state) {
-      updateOverlayPosition(state);
+      updateOverlaySize(state);
       const boutKey = [
         state.settings && state.settings.bashoId,
         state.settings && state.settings.day,
@@ -393,7 +368,7 @@
 
     if (typeof io === "function") {
       const socket = io();
-      socket.on("bout_update", updateOverlayPosition);
+      socket.on("bout_update", updateOverlaySize);
       socket.on("pre_match_update", receiveBout);
       socket.on("bout_result", state => {
         receiveBout(state);

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Main Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=3) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=7) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -30,29 +30,6 @@
   </main>
   <script>
     const mainOverlay = document.getElementById("main-overlay");
-    const MIN_NAME_FONT_SIZE = 10;
-
-    function fitNameToWidth(element) {
-      element.style.fontSize = "";
-      let fontSize = Number.parseFloat(window.getComputedStyle(element).fontSize);
-      if (!Number.isFinite(fontSize) || element.clientWidth <= 0) return;
-
-      while (fontSize > MIN_NAME_FONT_SIZE && element.scrollWidth > element.clientWidth) {
-        fontSize = Math.max(MIN_NAME_FONT_SIZE, fontSize - 1);
-        element.style.fontSize = `${fontSize}px`;
-      }
-    }
-
-    function fitWrestlerNames() {
-      document.querySelectorAll(".main-name").forEach(fitNameToWidth);
-    }
-
-    function placeOverlay(bounds, canvas) {
-      mainOverlay.style.left = `${bounds.x / canvas.width * 100}%`;
-      mainOverlay.style.top = `${bounds.y / canvas.height * 100}%`;
-      mainOverlay.style.width = `${bounds.width / canvas.width * 100}%`;
-      mainOverlay.style.height = `${bounds.height / canvas.height * 100}%`;
-    }
 
     function abbreviatedRank(rank) {
       if (!rank) return "—";
@@ -101,7 +78,8 @@
 
     function renderBout(state) {
       if (!state.settings || !state.settings.overlay) return;
-      placeOverlay(state.settings.overlay.main, state.settings.overlay.canvas);
+      mainOverlay.style.width = `${state.settings.overlay.main.width}px`;
+      mainOverlay.style.height = `${state.settings.overlay.main.height}px`;
       document.getElementById("division").textContent = divisionLabel(state.division);
       document.getElementById("east-name").textContent = state.east.name;
       document.getElementById("west-name").textContent = state.west.name;
@@ -111,10 +89,7 @@
       document.getElementById("east-rank").textContent = abbreviatedRank(state.east.rank);
       document.getElementById("west-rank").textContent = abbreviatedRank(state.west.rank);
       mainOverlay.hidden = false;
-      fitWrestlerNames();
     }
-
-    window.addEventListener("resize", fitWrestlerNames);
 
     fetch("/api/state")
       .then(response => {
