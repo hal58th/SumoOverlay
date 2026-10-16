@@ -1,6 +1,7 @@
 import json
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -242,7 +243,7 @@ def test_pages_and_kanji_lookup_are_available():
     main_overlay = client.get("/main-overlay")
     assert main_overlay.status_code == 200
     assert 'Makuuchi: 1' in main_overlay.text
-    assert "return number ? `Div ${number}` : \"Division\";" in main_overlay.text
+    assert "return number ? `Division ${number}` : \"Division\";" in main_overlay.text
     assert "fitNameToWidth" not in main_overlay.text
     assert "state.settings.overlay.main.width}px" in main_overlay.text
     assert "state.settings.overlay.main.height}px" in main_overlay.text
@@ -251,10 +252,10 @@ def test_pages_and_kanji_lookup_are_available():
     )[0]
     assert "width: 1582px;" not in main_styles
     assert "height: 174px;" not in main_styles
-    assert "font-size: 48px;" in main_styles
+    assert "font-size: 90px;" in main_styles
     assert "line-height: 1.25;" in main_styles
-    assert "font-size: 26px;" in main_styles
-    assert "font-size: 28px;" in main_styles
+    assert "font-size: 72px;" in main_styles
+    assert "font-size: 56px;" in main_styles
     main_strip_styles = main_styles.split(".main-strip {", maxsplit=1)[1].split(
         "}", maxsplit=1
     )[0]
@@ -280,6 +281,32 @@ def test_pages_and_kanji_lookup_are_available():
     assert '`${state.boutsUntilNextStage} ${boutWord} until ${target}`' in control.text
     assert client.get("/api/lookup").json == {"栃大海": "Tochitaikai"}
     assert client.get("/api/state").json["headToHead"] is None
+
+
+def test_bold_pre_match_records_do_not_change_score_row_height():
+    stylesheet_path = Path(__file__).resolve().parents[1] / "static" / "overlay.css"
+    all_styles = stylesheet_path.read_text(encoding="utf-8")
+    record_styles = all_styles.split(".record {", maxsplit=1)[1].split("}", maxsplit=1)[0]
+    emphasized_record_styles = all_styles.split(".record strong {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+
+    assert "line-height: 1;" in record_styles
+    assert "font-size: inherit;" in emphasized_record_styles
+    assert "line-height: inherit;" in emphasized_record_styles
+    assert "font-size: 1.12em;" not in emphasized_record_styles
+
+
+def test_pre_match_wrestler_names_align_independently_of_column_content_height():
+    stylesheet_path = Path(__file__).resolve().parents[1] / "static" / "overlay.css"
+    all_styles = stylesheet_path.read_text(encoding="utf-8")
+    matchup_styles = all_styles.split(".matchup {", maxsplit=1)[1].split("}", maxsplit=1)[0]
+    wrestler_styles = all_styles.split(".wrestler {", maxsplit=1)[1].split("}", maxsplit=1)[0]
+    versus_styles = all_styles.split(".versus {", maxsplit=1)[1].split("}", maxsplit=1)[0]
+
+    assert "align-items: start;" in matchup_styles
+    assert "align-self: start;" in wrestler_styles
+    assert "align-self: center;" in versus_styles
 
 
 def test_overlay_routes_load_configured_custom_template_files(tmp_path):
