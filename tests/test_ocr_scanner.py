@@ -11,15 +11,17 @@ def test_scanner_requires_stable_reads_and_emits_a_match_once(caplog):
     emitted = []
     scanner = OCRScanner(
         lambda: {},
-        lambda left, right: emitted.append((left, right)) or {"index": 3},
+        lambda left, right: emitted.append((left, right))
+        or {"index": 3, "division": "Makuuchi", "matchNo": 4},
         logging.getLogger("test-ocr"),
     )
 
     assert scanner.observe(" 大喜翔 ", "栃幸大", stable_readings=2) is None
     assert scanner.status()["state"] == "confirming"
     state = scanner.observe("大喜翔", " 栃幸大 ", stable_readings=2)
-    assert state == {"index": 3}
+    assert state == {"index": 3, "division": "Makuuchi", "matchNo": 4}
     assert scanner.status()["state"] == "matched"
+    assert scanner.status()["lastAction"] == "Matched 大喜翔 to Makuuchi bout 4."
     assert emitted == [("大喜翔", "栃幸大")]
 
     assert scanner.observe("大喜翔", "栃幸大", stable_readings=2) is None
@@ -105,6 +107,9 @@ def test_scanner_reports_unmatched_names_and_callback_errors(caplog):
     unmatched.observe("大喜翔", "栃幸大", stable_readings=1)
     assert unmatched.status()["state"] == "unmatched"
     assert unmatched.status()["matchedBout"] is None
+    last_action = unmatched.status()["lastAction"]
+    unmatched.observe("", "", stable_readings=1)
+    assert unmatched.status()["lastAction"] == last_action
 
     def fail_lookup(left, right):
         raise RuntimeError("lookup failed")

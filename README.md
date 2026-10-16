@@ -5,7 +5,7 @@ This program downloads a basho's bout lists from [sumo-api.com](https://sumo-api
 1. **Main overlay** — a compact, persistent strip in the top-left with the current division, wrestler names, their records before this bout, and abbreviated ranks.
 2. **Pre-match overlay** — a larger matchup card with ranks, pre-bout records, and head-to-head (H2H) wins. When enabled, it appears after a bout is selected and hides after the configured number of seconds. This timer works the same in manual and automated modes; set the duration to `0` or use the Control page toggle to turn it off.
 
-Settings are read from `config.json`; the program does not use environment variables. The app watches that file and reloads valid changes while it is running. Optional OCR can recognize either or both Japanese names on ABEMA's scoresheet and select the uniquely matching scheduled bout automatically. OCR uses the exact Japanese-to-English lookup from sumo-api.com; it does not translate names.
+Settings are read from `config.json`. The app watches that file and reloads valid changes while it is running. Optional OCR can recognize either or both Japanese names on ABEMA's scoresheet and select the uniquely matching scheduled bout automatically. OCR uses the exact Japanese-to-English lookup from sumo-api.com; it does not translate names.
 
 ## Requirements
 
@@ -87,7 +87,7 @@ For a different layout, make another file such as `config.fullscreen.json` and p
 
 ## OCR bout detection
 
-OCR is opt-in at installation, but the sample `config.json` has `ocr.enabled` set to `true`. The scanner starts when you run `app.py`; it waits without capturing the screen while control mode is **manual**. To use it, install the optional packages, run the app on the same Windows desktop as the browser playing ABEMA, then choose **Automated** on the Control page. The page reports whether OCR is paused, reading, confirming names, below the confidence threshold, matched to a bout, or reporting an error.
+OCR is opt-in at installation, but the sample `config.json` has `ocr.enabled` set to `true`. The scanner starts when you run `app.py`; it waits without capturing the screen while control mode is **manual**. To use it, install the optional packages, run the app on the same Windows desktop as the browser playing ABEMA, then choose **Automated** on the Control page. The page reports whether OCR is paused, reading, confirming names, below the confidence threshold, matched to a bout, or reporting an error. A separate **Last OCR action** line keeps the most recent match, no-match, low-confidence, or scan-error detail visible while the live status continues to update, so it can be copied for troubleshooting.
 
 ### Install OCR on Windows
 

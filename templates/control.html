@@ -19,6 +19,7 @@
     .control-panel .record { font-size: 16px; }
     .control-panel .head-to-head { margin-top: 12px; font-size: 16px; }
     #winner-status { margin: 8px 0 0; color: #c2c8d0; font-size: 12px; text-align: center; }
+    #ocr-last-action { overflow-wrap: anywhere; }
     .winner-buttons button:first-child { background: #258b43; color: #fff; }
     .winner-buttons button:last-child { background: #7139ad; color: #fff; }
     .buttons { display: flex; gap: 8px; margin-top: 10px; }
@@ -110,6 +111,7 @@
       <button id="mode-toggle" type="button">Loading…</button>
     </section>
     <p id="ocr-status" role="status">OCR status: checking…</p>
+    <p id="ocr-last-action" role="status">Last OCR action: No stable OCR match has been checked yet.</p>
     <section class="pre-match-controls">
       <label class="pre-match-duration" for="pre-match-seconds">
         Auto-show duration in seconds (0 = off)
@@ -256,6 +258,8 @@
           } else {
             status.textContent = `OCR status: ${payload.state}.`;
           }
+          document.getElementById("ocr-last-action").textContent =
+            `Last OCR action: ${payload.lastAction || "No stable OCR match has been checked yet."}`;
         })
         .catch(error => document.getElementById("ocr-status").textContent = error.message);
     }

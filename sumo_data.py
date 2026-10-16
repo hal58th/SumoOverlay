@@ -5,13 +5,14 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import local
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import quote
 
 import requests
 
 
 DIVISION_ORDER = ("Jonokuchi", "Jonidan", "Sandanme", "Makushita", "Juryo", "Makuuchi")
+LookupValue = TypeVar("LookupValue")
 
 
 class SumoApiError(RuntimeError):
@@ -188,16 +189,21 @@ def build_bouts(
     return bouts
 
 
-def build_kanji_lookup(profiles: list[dict[str, Any]]) -> dict[str, str]:
-    """Map API Japanese shikona variants directly to API English shikona."""
-    lookup: dict[str, str] = {}
+def _build_kanji_lookup(
+    entries: list[tuple[str, LookupValue]],
+) -> dict[str, LookupValue]:
+    lookup: dict[str, LookupValue] = {}
     ambiguous: set[str] = set()
 
-    for profile in profiles:
-        japanese = _required_text(profile.get("shikonaJp"), "Japanese shikona")
-        english = _required_text(profile.get("shikonaEn"), "English shikona")
-        variants = {japanese, "".join(japanese.split())}
-        first_name = japanese.split()[0] if japanese.split() else japanese
+    for japanese, value in entries:
+        ring_name = japanese.split("(", 1)[0].split("（", 1)[0].strip()
+        variants = {
+            japanese,
+            "".join(japanese.split()),
+            ring_name,
+            "".join(ring_name.split()),
+        }
+        first_name = ring_name.split()[0] if ring_name.split() else ring_name
         variants.add(first_name)
         variants.add("".join(first_name.split()))
 
@@ -205,14 +211,26 @@ def build_kanji_lookup(profiles: list[dict[str, Any]]) -> dict[str, str]:
             if not variant:
                 continue
             previous = lookup.get(variant)
-            if previous is not None and previous != english:
+            if previous is not None and previous != value:
                 ambiguous.add(variant)
             else:
-                lookup[variant] = english
+                lookup[variant] = value
 
     for variant in ambiguous:
         lookup.pop(variant, None)
     return lookup
+
+
+def build_kanji_lookup(profiles: list[dict[str, Any]]) -> dict[str, str]:
+    """Map API Japanese shikona variants directly to API English shikona."""
+    entries = [
+        (
+            _required_text(profile.get("shikonaJp"), "Japanese shikona"),
+            _required_text(profile.get("shikonaEn"), "English shikona"),
+        )
+        for profile in profiles
+    ]
+    return _build_kanji_lookup(entries)
 
 
 class SumoApiClient:
@@ -324,6 +342,7 @@ class BashoSchedule:
             raise SumoApiError(f"No bouts were returned for {division}, day {day}")
         self._profile_ids = sorted(_participant_ids(self._current_day))
         self._kanji_lookup: dict[str, str] | None = None
+        self._kanji_id_lookup: dict[str, int] | None = None
 
     def _fetch_day(self, day: int) -> list[dict[str, Any]]:
         if len(self._divisions) == 1:
@@ -348,17 +367,30 @@ class BashoSchedule:
 
     @property
     def kanji_lookup(self) -> dict[str, str]:
+        self._load_kanji_lookups()
+        return self._kanji_lookup or {}
+
+    def _load_kanji_lookups(self) -> None:
         profile_ids = sorted(_participant_ids(self._current_day))
         if profile_ids != self._profile_ids:
             self._profile_ids = profile_ids
             self._kanji_lookup = None
-        if self._kanji_lookup is None:
+            self._kanji_id_lookup = None
+        if self._kanji_lookup is None or self._kanji_id_lookup is None:
             with ThreadPoolExecutor(
                 max_workers=min(8, len(self._profile_ids))
             ) as executor:
                 profiles = list(executor.map(self._fetch_rikishi, self._profile_ids))
             self._kanji_lookup = build_kanji_lookup(profiles)
-        return self._kanji_lookup
+            self._kanji_id_lookup = _build_kanji_lookup(
+                [
+                    (
+                        _required_text(profile.get("shikonaJp"), "Japanese shikona"),
+                        rikishi_id,
+                    )
+                    for rikishi_id, profile in zip(self._profile_ids, profiles, strict=True)
+                ]
+            )
 
     @property
     def bouts(self) -> list[Bout]:
@@ -486,20 +518,20 @@ class BashoSchedule:
 
     def find_bout_index_by_kanji(self, left_name: str, right_name: str) -> int | None:
         """Resolve one or both OCR-read Japanese names to one scheduled bout."""
-        lookup = self.kanji_lookup
-        detected_names: set[str] = set()
+        self._load_kanji_lookups()
+        lookup = self._kanji_id_lookup or {}
+        detected_ids: set[int] = set()
         for name in (left_name, right_name):
             if name:
-                english = lookup.get(name) or lookup.get("".join(name.split()))
-                if english:
-                    detected_names.add(english.casefold())
-        if not detected_names:
+                rikishi_id = lookup.get(name) or lookup.get("".join(name.split()))
+                if rikishi_id is not None:
+                    detected_ids.add(rikishi_id)
+        if not detected_ids:
             return None
 
         matches = [
             index
             for index, bout in enumerate(self._bouts)
-            if detected_names
-            & {bout.east.name.casefold(), bout.west.name.casefold()}
+            if detected_ids & {bout.east.rikishi_id, bout.west.rikishi_id}
         ]
         return matches[0] if len(matches) == 1 else None

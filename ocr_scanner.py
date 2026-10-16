@@ -35,6 +35,7 @@ class OCRScanner:
             "rightConfidence": None,
             "error": None,
             "matchedBout": None,
+            "lastAction": "No stable OCR match has been checked yet.",
         }
 
     def start(self) -> None:
@@ -126,23 +127,36 @@ class OCRScanner:
             state = self.on_match(*pair)
         except Exception as error:
             self.logger.exception("OCR match lookup failed")
-            self._set_status(state="error", error=str(error))
+            self._set_status(
+                state="error",
+                error=str(error),
+                lastAction=f"OCR schedule lookup failed: {error}",
+            )
             return None
         if state is None:
             self._set_status(
                 state="unmatched",
                 error="Recognized names were not found together in the loaded bout schedule.",
                 matchedBout=None,
+                lastAction=(
+                    f"OCR read {pair[0] or 'unread'} vs {pair[1] or 'unread'}, "
+                    "but could not identify one matching scheduled bout."
+                ),
             )
             return None
+        matched_bout = {
+            "division": state.get("division"),
+            "matchNo": state.get("matchNo"),
+            "index": state.get("index"),
+        }
         self._set_status(
             state="matched",
             error=None,
-            matchedBout={
-                "division": state.get("division"),
-                "matchNo": state.get("matchNo"),
-                "index": state.get("index"),
-            },
+            matchedBout=matched_bout,
+            lastAction=(
+                f"Matched {pair[0] or pair[1]} to {matched_bout['division']} "
+                f"bout {matched_bout['matchNo']}."
+            ),
         )
         return state
 
@@ -268,6 +282,12 @@ class OCRScanner:
                         rightConfidence=right[1],
                         error=None,
                         matchedBout=None,
+                        lastAction=(
+                            "OCR read "
+                            f"{left[0] or 'unread'} ({left[1]:.0%}) vs "
+                            f"{right[0] or 'unread'} ({right[1]:.0%}); "
+                            "both names were below the confidence threshold."
+                        ),
                     )
                 else:
                     left_name = (
@@ -292,5 +312,9 @@ class OCRScanner:
                     should_log = self._status.get("error") != message
                 if should_log:
                     self.logger.exception("OCR scanner is unavailable: %s", error)
-                self._set_status(state="error", error=message)
+                self._set_status(
+                    state="error",
+                    error=message,
+                    lastAction=f"OCR scan failed: {message}",
+                )
                 self._stop.wait(2)

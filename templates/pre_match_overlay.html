@@ -141,6 +141,16 @@
       return { years: Math.floor(months / 12), months: months % 12 };
     }
 
+    function compareAge(eastAge, westAge) {
+      if (!eastAge || !westAge) return { east: false, west: false };
+      const eastMonths = eastAge.years * 12 + eastAge.months;
+      const westMonths = westAge.years * 12 + westAge.months;
+      return {
+        east: eastMonths >= westMonths,
+        west: westMonths >= eastMonths,
+      };
+    }
+
     function heightText(heightCm) {
       if (typeof heightCm !== "number" || heightCm <= 0) return null;
       const totalInches = Math.round(heightCm / 2.54);
@@ -203,7 +213,13 @@
           comparisons.tenure[side]
         );
       }
-      if (age) line("Age", `${age.years} years, ${age.months} months`);
+      if (age) {
+        line(
+          "Age",
+          `${age.years} years, ${age.months} months`,
+          comparisons.age[side]
+        );
+      }
       const height = heightText(content.height);
       if (height) line("Height", height.replace(/^Height: /, ""), comparisons.height[side]);
       const weight = weightText(content.weight);
@@ -243,6 +259,8 @@
       const profiles = state.wrestlerProfiles || {};
       const eastProfile = profiles.east || {};
       const westProfile = profiles.west || {};
+      const eastAge = ageFromBirthDate(eastProfile.birthDate);
+      const westAge = ageFromBirthDate(westProfile.birthDate);
       const eastLifetime = eastProfile.lifetime;
       const westLifetime = westProfile.lifetime;
       const hasLifetime = profile =>
@@ -264,6 +282,7 @@
           westValue > eastValue,
       });
       const comparisons = {
+        age: compareAge(eastAge, westAge),
         lifetimeScore: compare(eastScore, westScore),
         lifetimeMatches: compare(
           eastLifetime && eastLifetime.matches,

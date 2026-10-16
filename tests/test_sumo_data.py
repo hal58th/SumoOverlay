@@ -78,6 +78,18 @@ def test_kanji_lookup_maps_api_names_and_drops_ambiguous_keys():
     assert "栃大海" not in lookup
 
 
+def test_kanji_lookup_strips_parenthetical_reading_for_ocr_matching():
+    lookup = build_kanji_lookup(
+        [
+            {"shikonaJp": "藤天晴(ふじてんせい)", "shikonaEn": "Fujitensei"},
+            {"shikonaJp": "夢道鵬(むどうほう)", "shikonaEn": "Mudoho"},
+        ]
+    )
+
+    assert lookup["藤天晴"] == "Fujitensei"
+    assert lookup["夢道鵬"] == "Mudoho"
+
+
 def test_api_client_surfaces_http_failures():
     class FailedResponse:
         def raise_for_status(self):
@@ -140,6 +152,51 @@ def test_schedule_matches_ocr_names_to_the_unique_bout_in_either_orientation():
     assert schedule.find_bout_index_by_kanji("", "栃幸大") == 0
     assert schedule.find_bout_index_by_kanji("知らない", "栃幸大") == 0
     assert schedule.find_bout_index_by_kanji("知らない", "") is None
+
+
+def test_schedule_matches_lower_division_ocr_names_with_parenthetical_readings():
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [
+                {
+                    **match(1, 9050, 91),
+                    "division": "Makushita",
+                }
+            ]
+
+        def fetch_rikishi(self, rikishi_id):
+            profiles = {
+                9050: {
+                    "shikonaJp": "藤天晴(ふじてんせい)",
+                    "shikonaEn": "Fujitensei",
+                },
+                91: {
+                    "shikonaJp": "夢道鵬(むどうほう)",
+                    "shikonaEn": "Mudoho",
+                },
+            }
+            return profiles[rikishi_id]
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makushita", 1)
+
+    assert schedule.find_bout_index_by_kanji("藤天晴", "夢道鵬") == 0
+
+
+def test_schedule_matches_ocr_by_rikishi_id_when_api_english_spellings_differ():
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            profiles = {
+                1: {"shikonaJp": "大喜翔", "shikonaEn": "Profile spelling"},
+                2: {"shikonaJp": "栃幸大", "shikonaEn": "Another spelling"},
+            }
+            return profiles[rikishi_id]
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+
+    assert schedule.find_bout_index_by_kanji("大喜翔", "栃幸大") == 0
 
 
 def test_schedule_does_not_choose_between_ambiguous_ocr_matches():
