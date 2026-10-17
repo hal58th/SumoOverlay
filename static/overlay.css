@@ -94,6 +94,11 @@ body {
   text-shadow: .35px 0 currentColor, -.35px 0 currentColor;
 }
 
+.main-record .announced-result,
+.record .announced-result {
+  color: #ff4b4b;
+}
+
 .main-rank {
   color: #d4d8de;
   font-size: 72px;

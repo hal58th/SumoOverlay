@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import sys
 from threading import Event, RLock, Thread
 from typing import Any, Callable
 
@@ -167,7 +165,8 @@ class OCRScanner:
                 import torch
             except ImportError as error:
                 raise RuntimeError(
-                    'OCR packages are missing. Install them with: python -m pip install -e ".[ocr]"'
+                    'OCR packages are missing. Install them with: '
+                    r'.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"'
                 ) from error
             torch.set_num_threads(2)
             self._reader = easyocr.Reader(["ja"], gpu=False, verbose=False)
@@ -176,25 +175,17 @@ class OCRScanner:
     def _capture_and_read(
         self, settings: dict[str, Any]
     ) -> tuple[tuple[str, float], tuple[str, float]]:
-        if sys.platform.startswith("linux") and (
-            os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP")
-        ):
-            raise RuntimeError(
-                "OCR screen capture cannot read the Windows desktop from WSL. "
-                "Run app.py with Windows Python to use OCR, or set ocr.enabled "
-                "to false in config.json to use the WSL server with manual controls."
-            )
-
         try:
             import mss
             import numpy as np
         except ImportError as error:
             raise RuntimeError(
-                'Screen-capture packages are missing. Install them with: python -m pip install -e ".[ocr]"'
+                'Screen-capture packages are missing. Install them with: '
+                r'.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"'
             ) from error
 
         ocr_settings = settings["ocr"]
-        capture_region = settings["capture_regions"]["abema_scoresheet"]
+        capture_region = ocr_settings["capture_regions"]["abema_scoresheet"]
         with mss.mss() as capture:
             monitors = capture.monitors
             monitor_number = ocr_settings["monitor"]
@@ -209,7 +200,7 @@ class OCRScanner:
                 or capture_region["y"] + capture_region["height"] > monitor["height"]
             ):
                 raise RuntimeError(
-                    "capture_regions.abema_scoresheet must fit inside the selected OCR monitor."
+                    "ocr.capture_regions.abema_scoresheet must fit inside the selected OCR monitor."
                 )
             screenshot = capture.grab(
                 {

@@ -12,7 +12,7 @@ Settings are read from `config.json`. The app watches that file and reloads vali
 - Python 3.10 or newer.
 - An internet connection to install packages and fetch data from sumo-api.com.
 - OBS Studio, if you want to stream the overlays.
-- This project folder. The examples assume it is `C:\SumoOverlay` in Windows, or `/mnt/c/SumoOverlay` from WSL.
+- This project folder. The examples assume it is `C:\SumoOverlay`.
 
 The base app uses CPU-only Python packages. OCR is optional and requires EasyOCR, PyTorch, MSS, and NumPy; a GPU is not required.
 
@@ -30,7 +30,8 @@ Open `config.json` in a text editor and change the values you need. Keep the bra
 | `server.host`, `server.port` | Local web-server address and port. Keep the host set to `127.0.0.1` unless you know why it needs to change. |
 | `server.watch_interval_seconds` | How often, in seconds, the app checks `config.json` for edits. |
 | `control.mode` | `"manual"` or `"automated"`. Manual mode uses the Control page buttons. Automated mode lets OCR select a uniquely identified bout when either one or both names meet the confidence threshold for the configured number of consecutive reads. |
-| `control.pre_match_seconds` | How long, in seconds, the pre-match overlay appears after a bout change. `0` disables timed auto-show. |
+| `control.pre_match_salaried_seconds` | How long, in seconds, the pre-match overlay appears for Makuuchi and Juryo bouts. `0` disables timed auto-show for these salaried divisions. |
+| `control.pre_match_unsalaried_seconds` | How long, in seconds, the pre-match overlay appears for Makushita and lower division bouts. `0` disables timed auto-show for these unsalaried divisions. |
 | `control.pre_match_pinned` | `true` or `false`. When true, keeps the pre-match overlay visible until you hide it from the Control page. |
 | `overlay.main.width`, `overlay.main.height` | Fixed pixel width and height for the main overlay and its OBS Browser Source. |
 | `overlay.pre_match.width`, `overlay.pre_match.height` | Fixed pixel width and height for the pre-match overlay and its OBS Browser Source. |
@@ -41,8 +42,8 @@ Open `config.json` in a text editor and change the values you need. Keep the bra
 | `ocr.interval_seconds` | Delay between OCR scans. |
 | `ocr.stable_readings` | Number of consecutive matching reads required before selecting a bout. |
 | `ocr.minimum_confidence` | Minimum EasyOCR confidence from `0` through `1` for each name. |
-| `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `capture_regions.abema_scoresheet`. |
-| `capture_regions.abema_scoresheet` | Rectangle around the ABEMA scoresheet, in pixels relative to the selected monitor. |
+| `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `ocr.capture_regions.abema_scoresheet`. |
+| `ocr.capture_regions.abema_scoresheet` | Rectangle around the ABEMA scoresheet, in pixels relative to the selected monitor. |
 
 Each overlay's configured width and height define its complete fixed-size image in CSS pixels. There is no canvas scaling or internal positioning; place each Browser Source where you want it in OBS. Set `overlay.pre_match.opacity` from `0` to `1` to adjust only the card background transparency; the text stays fully opaque. Capture-region coordinates refer to the selected desktop monitor, not the OBS overlay. OCR name-box coordinates are pixel offsets inside the capture region. If ABEMA moves its scoresheet, update the capture rectangle and/or name-box coordinates to match.
 
@@ -58,24 +59,24 @@ For example, create `config.firefox.json` beside `config.json` with the capture 
 
 ```json
 {
-  "capture_regions": {
-    "abema_scoresheet": {
-      "x": 120,
-      "y": 80,
-      "width": 1280,
-      "height": 720
-    }
-  },
   "ocr": {
+    "capture_regions": {
+      "abema_scoresheet": {
+        "x": 0,
+        "y": 0,
+        "width": 1500,
+        "height": 180
+      }
+    },
     "name_boxes": {
-      "left": { "x": 198, "y": 25, "width": 200, "height": 40 },
-      "right": { "x": 480, "y": 25, "width": 200, "height": 40 }
+      "left": { "x": 198, "y": 50, "width": 400, "height": 40 },
+      "right": { "x": 480, "y": 50, "width": 400, "height": 40 }
     }
   }
 }
 ```
 
-The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor` or `overlay.main.width`, using their normal `config.json` structure.
+The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor`, `ocr.capture_regions.abema_scoresheet`, or `overlay.main.width`, using their normal `config.json` structure.
 
 Start the app with the profile you want:
 
@@ -99,17 +100,17 @@ Open PowerShell in the project folder and install the optional OCR dependencies 
 
 EasyOCR also installs PyTorch, so this step can take several minutes and needs an internet connection. On its first OCR use, EasyOCR downloads its text-detection and Japanese-recognition models; allow those downloads to finish before the broadcast. This project sets PyTorch to two CPU threads and explicitly disables GPU use. The regular app and unit tests do not load the OCR model unless the live scanner is started.
 
-Run `.\.venv\Scripts\python.exe app.py` from PowerShell. Run the app in Windows because MSS must capture the Windows monitor where ABEMA is playing. WSL has its own Linux screen session and cannot capture a Windows browser window. Windows OBS can use `http://127.0.0.1:5000` when the app runs in Windows.
+Run `.\.venv\Scripts\python.exe app.py` from PowerShell on the Windows desktop where ABEMA is playing. Windows OBS can use `http://127.0.0.1:5000`.
 
 ### Calibrate OCR when the browser is not full-screen
 
-The scanner captures one rectangle of the monitor, then crops the left and right wrestler names from that captured image before running OCR. The capture rectangle only needs to contain both name boxes; it does not need to include the whole scoresheet. The default example captures a 1920×1080 rectangle at the top-left of monitor 1. Change `capture_regions.abema_scoresheet` in `config.json` to a smaller screen-pixel rectangle containing both names. Its `x` and `y` start at the top-left of the selected monitor (not the whole multi-monitor desktop); `width` and `height` are the rectangle size. The full rectangle must fit on that monitor.
+The scanner captures one rectangle of the monitor, then crops the left and right wrestler names from that captured image before running OCR. The capture rectangle only needs to contain both name boxes; it does not need to include the whole scoresheet. The default example captures a 1920×1080 rectangle at the top-left of monitor 1. Change `ocr.capture_regions.abema_scoresheet` in `config.json` to a smaller screen-pixel rectangle containing both names. Its `x` and `y` start at the top-left of the selected monitor (not the whole multi-monitor desktop); `width` and `height` are the rectangle size. The full rectangle must fit on that monitor.
 
 There is no drag-to-select calibration tool in the app yet. For now, measure the boxes from a screenshot and enter their coordinates in `config.json`. The name boxes use pixels (not percentages), so there is no percentage conversion:
 
 1. Take a screenshot showing ABEMA at the same browser size and screen position you plan to use.
 2. In an image editor that shows the cursor position and selection size, measure each wrestler's large, lower name line. Aim for the ring name only; avoid including the smaller pronunciation line above it.
-3. Measure the smallest practical screen-pixel rectangle containing both name boxes. Enter it as `capture_regions.abema_scoresheet` (`x`, `y`, `width`, `height`). Its `x` and `y` are relative to the top-left corner of the selected monitor.
+3. Measure the smallest practical screen-pixel rectangle containing both name boxes. Enter it as `ocr.capture_regions.abema_scoresheet` (`x`, `y`, `width`, `height`). Its `x` and `y` are relative to the top-left corner of the selected monitor.
 4. For each name, subtract the capture rectangle's screen `x` and `y` from the name rectangle's screen `x` and `y`. Use those relative `x` and `y` offsets, plus the measured pixel width and height, in `ocr.name_boxes.left` and `ocr.name_boxes.right`. Both name boxes must fit inside the capture rectangle.
 
 These annotated examples show the capture rectangle and individual name crops. Their coordinates describe the sample images only; measure your own monitor and browser layout:
@@ -184,93 +185,29 @@ Keep the PowerShell window open while using the overlays. Press **Ctrl+C** in th
 
 If PowerShell says `python` is not installed, use `py` and `.\.venv\Scripts\python.exe` as shown above; the standalone `python` command is not needed. If `py` is also not recognized, turn off the `python.exe` and `python3.exe` App Installer aliases under **Settings → Apps → Advanced app settings → App execution aliases**, reopen PowerShell, and try again. If Python is not installed, install Python 3.11 or newer from [python.org](https://www.python.org/downloads/windows/), selecting **Add python.exe to PATH** and the Python Launcher if offered.
 
-## Install and run on AlmaLinux 9 in WSL
-
-WSL is a Linux environment that runs alongside Windows. It has its own Linux Python and packages, separate from Windows. For OCR, run the app with Windows Python from PowerShell: MSS in WSL cannot capture the Windows desktop/browser, even if you install Linux X11 libraries. WSL remains an option for serving the overlays with manual bout controls.
-
-### 1. Open AlmaLinux and find the project
-
-Open **AlmaLinux 9** from the Windows Start menu. If the project is in `C:\SumoOverlay`, its WSL path is `/mnt/c/SumoOverlay`:
-
-```bash
-cd /mnt/c/SumoOverlay
-ls
-```
-
-The files should include `app.py`, `config.json`, and `pyproject.toml`. If the project is on another Windows drive, use `/mnt/<lowercase-drive-letter>/...`; for example `D:\Projects\SumoOverlay` is `/mnt/d/Projects/SumoOverlay`.
-
-### 2. Install Python and make a WSL-only environment
-
-```bash
-sudo dnf install -y python3.11 python3.11-pip
-mkdir -p "$HOME/.venvs"
-python3.11 -m venv "$HOME/.venvs/sumo-overlay"
-source "$HOME/.venvs/sumo-overlay/bin/activate"
-```
-
-If Linux asks for your password, type it and press **Enter**. It will not show characters as you type. When the environment is active, the command prompt usually begins with `(sumo-overlay)`.
-
-### 3. Install and start the app
-
-To serve the overlays from WSL without OCR, open `config.json` and set these values:
-
-```json
-"control": {
-  "mode": "manual"
-},
-"ocr": {
-  "enabled": false
-}
-```
-
-Keep the other settings in those objects, including the commas and braces. Then, from the project folder, install the app and run it:
-
-```bash
-python -m pip install --upgrade pip
-python -m pip install -e .
-python app.py
-```
-
-Keep this terminal open while using the overlays. Press **Ctrl+C** to stop the app. After opening a new AlmaLinux terminal, run `cd /mnt/c/SumoOverlay` and `source "$HOME/.venvs/sumo-overlay/bin/activate"` again before starting the app. You do not need to reinstall packages.
-
-If you see `No module named 'flask'`, activate the WSL environment and install the app packages in that same terminal:
-
-```bash
-cd /mnt/c/SumoOverlay
-source "$HOME/.venvs/sumo-overlay/bin/activate"
-python -m pip install -e .
-python app.py
-```
-
-If OCR is enabled while running in WSL, the app reports that it cannot capture the Windows desktop. Installing `libxcb` only supplies an X11 library; it does not give WSL's MSS access to the Windows browser window. To use OCR with ABEMA in a Windows browser, start the app from PowerShell using the Windows instructions above and keep `ocr.enabled` set to `true`.
-
-Do not use `sudo pip install flask`: it installs into the system Python, which may not be the Python running this app. If `python3.11` is unavailable, refresh AlmaLinux's package list with `sudo dnf makecache`, then retry `sudo dnf install -y python3.11 python3.11-pip`. Check that AlmaLinux 9 software repositories are enabled if DNF still cannot find the packages.
-
-With WSL 2 localhost forwarding enabled, Windows can open the app at `http://localhost:5000`. If Windows OBS cannot connect to the WSL server, use the Windows PowerShell setup above.
-
 ## Control page and addresses
 
 With the app running, open:
 
-- Control page: <http://127.0.0.1:5000/control> (WSL: <http://localhost:5000/control>)
-- Main overlay: <http://127.0.0.1:5000/main-overlay> (WSL: <http://localhost:5000/main-overlay>)
-- Pre-match overlay: <http://127.0.0.1:5000/overlay> (WSL: <http://localhost:5000/overlay>)
+- Control page: <http://127.0.0.1:5000/control>
+- Scoreboard overlay: <http://127.0.0.1:5000/scoreboard-overlay>
+- Pre-match overlay: <http://127.0.0.1:5000/overlay>
 - Current bout JSON: <http://127.0.0.1:5000/api/state>
 - Pre-match and H2H JSON: <http://127.0.0.1:5000/api/pre-match-state>
 - Kanji-to-English lookup: <http://127.0.0.1:5000/api/lookup>
 - OCR status: <http://127.0.0.1:5000/api/ocr/status>
 - Effective settings/reload status: <http://127.0.0.1:5000/api/settings>
 
-Use **Previous Bout** and **Next Bout** for replay or manual synchronization. After a bout finishes, choose **East Wins** or **West Wins** to show that result in the Control page and OBS overlays. This temporarily adds one win to the selected wrestler and one loss to the other wrestler's displayed pre-match record. It is held in memory only, makes no sumo-api.com request, and is cleared when the selected bout changes. Enter a division number from 1 (Makuuchi) to 6 (Jonokuchi) and choose **Go to division** to jump to that division's first scheduled bout. This requires `division: 0` so all six divisions are loaded. Set match control to **Manual** for button-driven selection or **Automated** for OCR selection. The OCR status appears below the mode control.
+Use **Previous Bout** and **Next Bout** for replay or manual synchronization. After a bout finishes, choose **East Wins** or **West Wins** to show that result in the Control page and OBS overlays. This temporarily adds one win to the selected wrestler and one loss to the other wrestler's displayed pre-match record; those two updated counts turn red and keep their normal division-based bold emphasis. The result is held in memory only, makes no sumo-api.com request, and is cleared when the selected bout changes. Enter a division number from 1 (Makuuchi) to 6 (Jonokuchi) and choose **Go to division** to jump to that division's first scheduled bout. This requires `division: 0` so all six divisions are loaded. Set match control to **Manual** for button-driven selection or **Automated** for OCR selection. The OCR status appears below the mode control.
 
-Use **Auto-show duration** and **Save duration** to set how long the pre-match card appears after a bout change. Set it to `0` to disable timed auto-show. **Show pre-match until I turn it off** pins the card on-screen until you press **Hide pre-match now**; this manual display remains available even when timed auto-show is disabled. These settings are saved in `config.json`.
+Use the separate **Salaried divisions** and **Unsalaried divisions** duration fields and click **Save duration** to choose how long the pre-match card appears after a bout change. Salaried covers Makuuchi and Juryo; unsalaried covers Makushita, Sandanme, Jonidan, and Jonokuchi. Set either value to `0` to disable timed auto-show for that group. **Show pre-match until I turn it off** pins the card on-screen until you press **Hide pre-match now**; manual display remains available even when timed auto-show is disabled. These settings are saved in `config.json`.
 
 ## OBS Studio
 
 In OBS, add two **Browser** sources:
 
-1. Main, always-on scoresheet overlay: `http://127.0.0.1:5000/main-overlay` (or `http://localhost:5000/main-overlay` when running in WSL). Set the Browser Source width and height to `overlay.main.width` and `overlay.main.height` in `config.json`.
-2. Pre-match H2H card: `http://127.0.0.1:5000/overlay` (or `http://localhost:5000/overlay` when running in WSL). Set its Browser Source width and height to `overlay.pre_match.width` and `overlay.pre_match.height`.
+1. Scoreboard, always-on scoresheet overlay: `http://127.0.0.1:5000/scoreboard-overlay`. Set the Browser Source width and height to `overlay.main.width` and `overlay.main.height` in `config.json`.
+2. Pre-match H2H card: `http://127.0.0.1:5000/overlay`. Set its Browser Source width and height to `overlay.pre_match.width` and `overlay.pre_match.height`.
 
 In OBS, position each Browser Source on the scene as desired. The overlay content is rendered at the configured dimensions in fixed CSS pixels and does not scale to fit the browser viewport. To change an overlay's rendered size, edit its width and height in `config.json`, then use those same values for the OBS Browser Source dimensions.
 
@@ -294,26 +231,13 @@ Normal tests do not call sumo-api.com or load the OCR model. They use the checke
 
 Install test dependencies and run the tests with:
 
-**Windows PowerShell**
-
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[test]"
 .\.venv\Scripts\python.exe -m pytest
-```
-
-**AlmaLinux WSL**, after activating the virtual environment:
-
-```bash
-python -m pip install -e '.[test]'
-python -m pytest
 ```
 
 To explicitly run the API snapshot test against live sumo-api.com instead, add `--live-api`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest --live-api
-```
-
-```bash
-python -m pytest --live-api
 ```

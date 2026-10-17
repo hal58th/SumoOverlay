@@ -240,13 +240,16 @@ def test_pages_and_kanji_lookup_are_available():
 
     assert client.get("/overlay").status_code == 200
     assert client.get("/pre-match-overlay").status_code == 200
-    main_overlay = client.get("/main-overlay")
-    assert main_overlay.status_code == 200
-    assert 'Makuuchi: 1' in main_overlay.text
-    assert "return number ? `Division ${number}` : \"Division\";" in main_overlay.text
-    assert "fitNameToWidth" not in main_overlay.text
-    assert "state.settings.overlay.main.width}px" in main_overlay.text
-    assert "state.settings.overlay.main.height}px" in main_overlay.text
+    scoreboard_overlay = client.get("/scoreboard-overlay")
+    assert scoreboard_overlay.status_code == 200
+    assert client.get("/main-overlay").status_code == 404
+    assert 'Makuuchi: 1' in scoreboard_overlay.text
+    assert "return number ? `Div ${number}` : \"Division\";" in scoreboard_overlay.text
+    assert "fitNameToWidth" not in scoreboard_overlay.text
+    assert "state.settings.overlay.main.width}px" in scoreboard_overlay.text
+    assert "state.settings.overlay.main.height}px" in scoreboard_overlay.text
+    assert 'wins.classList.toggle("announced-result", announcedWinner === side);' in scoreboard_overlay.text
+    assert 'state.announcedWinner' in scoreboard_overlay.text
     main_styles = client.get("/static/overlay.css").text.split(
         ".pre-match-card {", maxsplit=1
     )[0]
@@ -269,6 +272,9 @@ def test_pages_and_kanji_lookup_are_available():
         "const { width, height, opacity } = state.settings.overlay.pre_match;"
         in pre_match_html
     )
+    assert "state.divisionNumber <= 2" in pre_match_html
+    assert "state.settings.preMatchSalariedSeconds" in pre_match_html
+    assert "state.settings.preMatchUnsalariedSeconds" in pre_match_html
     assert 'preMatchOverlay.style.width = `${width}px`;' in pre_match_html
     assert "preMatchOverlay.style.setProperty(\"--pre-match-opacity\", String(opacity));" in pre_match_html
     assert "fitNameToWidth" not in pre_match_html
@@ -295,6 +301,24 @@ def test_bold_pre_match_records_do_not_change_score_row_height():
     assert "font-size: inherit;" in emphasized_record_styles
     assert "line-height: inherit;" in emphasized_record_styles
     assert "font-size: 1.12em;" not in emphasized_record_styles
+
+
+def test_announced_winner_record_counts_are_red_in_all_overlay_templates():
+    root = Path(__file__).resolve().parents[1]
+    templates = [
+        root / "templates" / "scoreboard_overlay.html",
+        root / "templates" / "pre_match_overlay.html",
+        root / "templates" / "control.html",
+    ]
+    for template_path in templates:
+        template = template_path.read_text(encoding="utf-8")
+        assert 'wins.classList.toggle("announced-result", announcedWinner === side);' in template
+        assert "announcedWinner !== side" in template
+
+    styles = (root / "static" / "overlay.css").read_text(encoding="utf-8")
+    assert ".main-record .announced-result" in styles
+    assert ".record .announced-result" in styles
+    assert "color: #ff4b4b;" in styles
 
 
 def test_pre_match_wrestler_names_align_independently_of_column_content_height():
@@ -328,7 +352,7 @@ def test_overlay_routes_load_configured_custom_template_files(tmp_path):
     client = app.test_client()
 
     assert b"Custom pre-match overlay" in client.get("/overlay").data
-    assert b"Makuuchi: 1" in client.get("/main-overlay").data
+    assert b"Makuuchi: 1" in client.get("/scoreboard-overlay").data
     assert b"Sumo Overlay Controls" in client.get("/control").data
 
 
@@ -340,13 +364,25 @@ def test_partial_override_config_merges_nested_values(tmp_path):
     write_config(settings_path, settings)
     write_config(
         override_path,
-        {"ocr": {"monitor": 2}, "overlay": {"main": {"width": 1400}}},
+        {
+            "ocr": {
+                "monitor": 2,
+                "capture_regions": {
+                    "abema_scoresheet": {"x": 120},
+                },
+            },
+            "overlay": {"main": {"width": 1400}},
+        },
     )
 
     effective = load_settings(settings_path, override_path)
 
     assert effective["ocr"]["monitor"] == 2
     assert effective["ocr"]["interval_seconds"] == settings["ocr"]["interval_seconds"]
+    assert effective["ocr"]["capture_regions"]["abema_scoresheet"] == {
+        **settings["ocr"]["capture_regions"]["abema_scoresheet"],
+        "x": 120,
+    }
     assert effective["overlay"]["main"] == {
         **settings["overlay"]["main"],
         "width": 1400,
@@ -357,7 +393,7 @@ def test_control_updates_persist_to_the_layer_that_defines_the_setting(tmp_path)
     settings_path = tmp_path / "config.json"
     override_path = tmp_path / "config.firefox.json"
     write_config(settings_path, default_settings())
-    write_config(override_path, {"control": {"pre_match_seconds": 30}})
+    write_config(override_path, {"control": {"pre_match_salaried_seconds": 30}})
     app = create_app(
         schedule=FakeSchedule([make_bout(1, 10, 11)]),
         config_path=settings_path,
@@ -368,16 +404,17 @@ def test_control_updates_persist_to_the_layer_that_defines_the_setting(tmp_path)
 
     try:
         response = app.test_client().post(
-            "/api/control/pre-match", json={"seconds": 45}
+            "/api/control/pre-match", json={"salaried_seconds": 45}
         )
 
         assert response.status_code == 200
-        assert response.json["settings"]["preMatchSeconds"] == 45
+        assert response.json["settings"]["preMatchSalariedSeconds"] == 45
+        assert response.json["settings"]["preMatchUnsalariedSeconds"] == 10
         assert json.loads(override_path.read_text(encoding="utf-8")) == {
-            "control": {"pre_match_seconds": 45}
+            "control": {"pre_match_salaried_seconds": 45}
         }
         assert json.loads(settings_path.read_text(encoding="utf-8"))["control"][
-            "pre_match_seconds"
+            "pre_match_salaried_seconds"
         ] == 10
     finally:
         app.extensions["settings_watcher"].stop()
@@ -544,7 +581,7 @@ def test_ocr_settings_validate_monitor_and_name_box_bounds():
 
 def test_ocr_name_boxes_use_pixels_relative_to_capture_region():
     settings = default_settings()
-    settings["capture_regions"]["abema_scoresheet"] = {
+    settings["ocr"]["capture_regions"]["abema_scoresheet"] = {
         "x": 100,
         "y": 50,
         "width": 800,
@@ -558,6 +595,16 @@ def test_ocr_name_boxes_use_pixels_relative_to_capture_region():
     validated = validate_settings(settings)
 
     assert validated["ocr"]["name_boxes"] == settings["ocr"]["name_boxes"]
+
+
+def test_capture_regions_must_be_nested_under_ocr():
+    settings = default_settings()
+    settings["capture_regions"] = {
+        "abema_scoresheet": {"x": 0, "y": 0, "width": 1920, "height": 1080}
+    }
+
+    with pytest.raises(SettingsError, match="Unknown settings key: capture_regions"):
+        validate_settings(settings)
 
 
 def test_percentage_name_boxes_are_rejected():
@@ -774,12 +821,13 @@ def test_control_mode_is_persisted_to_json_config(tmp_path):
         saved_settings = json.loads(settings_path.read_text(encoding="utf-8"))
         assert response.status_code == 200
         assert response.json["settings"]["mode"] == "automated"
-        assert response.json["settings"]["preMatchEnabled"] is True
-        assert response.json["settings"]["preMatchSeconds"] == 10
+        assert response.json["settings"]["preMatchSalariedSeconds"] == 10
+        assert response.json["settings"]["preMatchUnsalariedSeconds"] == 10
         assert saved_settings["control"]["mode"] == "automated"
         assert set(saved_settings["control"]) == {
             "mode",
-            "pre_match_seconds",
+            "pre_match_salaried_seconds",
+            "pre_match_unsalaried_seconds",
             "pre_match_pinned",
         }
     finally:
@@ -803,7 +851,7 @@ def test_external_json_edit_hot_reloads_overlay_settings(tmp_path):
         settings["control"]["mode"] = "automated"
         settings["overlay"]["main"]["width"] = 1600
         settings["overlay"]["pre_match"]["height"] = 900
-        settings["capture_regions"]["abema_scoresheet"]["x"] = 120
+        settings["ocr"]["capture_regions"]["abema_scoresheet"]["x"] = 120
         write_config(settings_path, settings)
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
@@ -817,7 +865,7 @@ def test_external_json_edit_hot_reloads_overlay_settings(tmp_path):
         assert response["settings"]["control"]["mode"] == "automated"
         assert client.get("/api/state").json["settings"]["overlay"]["main"]["width"] == 1600
         assert client.get("/api/pre-match-state").json["settings"]["overlay"]["pre_match"]["height"] == 900
-        assert client.get("/api/settings").json["settings"]["capture_regions"][
+        assert client.get("/api/settings").json["settings"]["ocr"]["capture_regions"][
             "abema_scoresheet"
         ]["x"] == 120
     finally:
@@ -867,14 +915,16 @@ def test_pre_match_toggle_is_independent_of_match_control_mode(tmp_path):
     try:
         response = app.test_client().post(
             "/api/control/pre-match",
-            json={"seconds": 0},
+            json={"salaried_seconds": 0, "unsalaried_seconds": 0},
         )
         saved_settings = json.loads(settings_path.read_text(encoding="utf-8"))
         assert response.status_code == 200
         assert response.json["settings"]["mode"] == "automated"
-        assert response.json["settings"]["preMatchEnabled"] is False
+        assert response.json["settings"]["preMatchSalariedSeconds"] == 0
+        assert response.json["settings"]["preMatchUnsalariedSeconds"] == 0
         assert saved_settings["control"]["mode"] == "automated"
-        assert saved_settings["control"]["pre_match_seconds"] == 0
+        assert saved_settings["control"]["pre_match_salaried_seconds"] == 0
+        assert saved_settings["control"]["pre_match_unsalaried_seconds"] == 0
     finally:
         app.extensions["settings_watcher"].stop()
 
@@ -882,7 +932,8 @@ def test_pre_match_toggle_is_independent_of_match_control_mode(tmp_path):
 def test_pre_match_pin_keeps_overlay_visible_until_unpinned(tmp_path):
     settings_path = tmp_path / "config.json"
     settings = default_settings()
-    settings["control"]["pre_match_seconds"] = 0
+    settings["control"]["pre_match_salaried_seconds"] = 0
+    settings["control"]["pre_match_unsalaried_seconds"] = 0
     write_config(settings_path, settings)
     app = create_app(
         schedule=FakeSchedule([make_bout(1, 10, 11)]),
@@ -895,7 +946,8 @@ def test_pre_match_pin_keeps_overlay_visible_until_unpinned(tmp_path):
         client = app.test_client()
         pinned = client.post("/api/control/pre-match", json={"pinned": True})
         assert pinned.status_code == 200
-        assert pinned.json["settings"]["preMatchEnabled"] is False
+        assert pinned.json["settings"]["preMatchSalariedSeconds"] == 0
+        assert pinned.json["settings"]["preMatchUnsalariedSeconds"] == 0
         assert pinned.json["settings"]["preMatchPinned"] is True
         saved_settings = json.loads(settings_path.read_text(encoding="utf-8"))
         assert saved_settings["control"]["pre_match_pinned"] is True
@@ -903,12 +955,13 @@ def test_pre_match_pin_keeps_overlay_visible_until_unpinned(tmp_path):
         unpinned = client.post("/api/control/pre-match", json={"pinned": False})
         assert unpinned.status_code == 200
         assert unpinned.json["settings"]["preMatchPinned"] is False
-        assert unpinned.json["settings"]["preMatchEnabled"] is False
+        assert unpinned.json["settings"]["preMatchSalariedSeconds"] == 0
+        assert unpinned.json["settings"]["preMatchUnsalariedSeconds"] == 0
     finally:
         app.extensions["settings_watcher"].stop()
 
 
-def test_zero_pre_match_duration_turns_overlay_off_and_positive_value_enables_it(tmp_path):
+def test_pre_match_duration_settings_are_independent_per_division_group(tmp_path):
     settings_path = tmp_path / "config.json"
     settings = default_settings()
     settings["control"]["mode"] = "manual"
@@ -922,17 +975,22 @@ def test_zero_pre_match_duration_turns_overlay_off_and_positive_value_enables_it
 
     try:
         client = app.test_client()
-        off = client.post("/api/control/pre-match", json={"seconds": 0})
+        off = client.post(
+            "/api/control/pre-match", json={"salaried_seconds": 0}
+        )
         assert off.status_code == 200
         assert off.json["settings"]["mode"] == "manual"
-        assert off.json["settings"]["preMatchSeconds"] == 0
-        assert off.json["settings"]["preMatchEnabled"] is False
+        assert off.json["settings"]["preMatchSalariedSeconds"] == 0
+        assert off.json["settings"]["preMatchUnsalariedSeconds"] == 10
 
-        on = client.post("/api/control/pre-match", json={"seconds": 8})
+        on = client.post(
+            "/api/control/pre-match",
+            json={"salaried_seconds": 8, "unsalaried_seconds": 25},
+        )
         assert on.status_code == 200
         assert on.json["settings"]["mode"] == "manual"
-        assert on.json["settings"]["preMatchSeconds"] == 8
-        assert on.json["settings"]["preMatchEnabled"] is True
+        assert on.json["settings"]["preMatchSalariedSeconds"] == 8
+        assert on.json["settings"]["preMatchUnsalariedSeconds"] == 25
     finally:
         app.extensions["settings_watcher"].stop()
 
@@ -952,7 +1010,12 @@ def test_invalid_pre_match_control_settings_are_rejected(tmp_path):
         client = app.test_client()
         assert client.post("/api/control/pre-match", json={"enabled": "off"}).status_code == 400
         assert client.post("/api/control/pre-match", json={"pinned": "yes"}).status_code == 400
-        assert client.post("/api/control/pre-match", json={"seconds": -1}).status_code == 400
+        assert client.post(
+            "/api/control/pre-match", json={"salaried_seconds": -1}
+        ).status_code == 400
+        assert client.post(
+            "/api/control/pre-match", json={"unsalaried_seconds": "bad"}
+        ).status_code == 400
         assert client.post("/api/control/pre-match", json={}).status_code == 400
     finally:
         app.extensions["settings_watcher"].stop()

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Overlay Controls</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=3) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=4) }}">
   <style>
     html.control-page { height: auto; min-height: 100%; overflow-y: auto; }
     body.control-page { display: block; height: auto; min-height: 100%; overflow-x: hidden;
@@ -29,7 +29,7 @@
     .mode-row { display: flex; align-items: center; justify-content: space-between;
       gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
     .mode-label { color: #e8bd68; font-weight: 700; }
-    .pre-match-controls { display: grid; grid-template-columns: minmax(100px, 1fr) auto;
+    .pre-match-controls { display: grid; grid-template-columns: repeat(2, minmax(100px, 1fr)) auto;
       align-items: end; gap: 8px; margin-top: 10px; padding: 10px;
       border: 1px solid #434a56; border-radius: 8px; }
     .pre-match-duration { display: grid; gap: 4px; font-size: 13px; }
@@ -113,9 +113,13 @@
     <p id="ocr-status" role="status">OCR status: checking…</p>
     <p id="ocr-last-action" role="status">Last OCR action: No stable OCR match has been checked yet.</p>
     <section class="pre-match-controls">
-      <label class="pre-match-duration" for="pre-match-seconds">
-        Auto-show duration in seconds (0 = off)
-        <input id="pre-match-seconds" type="number" min="0" step="1" value="10">
+      <label class="pre-match-duration" for="pre-match-salaried-seconds">
+        Salaried divisions (Makuuchi/Juryo), seconds (0 = off)
+        <input id="pre-match-salaried-seconds" type="number" min="0" step="1" value="10">
+      </label>
+      <label class="pre-match-duration" for="pre-match-unsalaried-seconds">
+        Unsalaried divisions (Makushita and lower), seconds (0 = off)
+        <input id="pre-match-unsalaried-seconds" type="number" min="0" step="1" value="10">
       </label>
       <div class="pre-match-actions">
         <button id="save-duration" type="button">Save duration</button>
@@ -124,7 +128,7 @@
       <p class="pre-match-help">Set duration to 0 to turn timed auto-show off. The show button keeps the card visible until you hide it.</p>
     </section>
     <nav class="links">
-      <a href="/main-overlay" target="_blank">Open main overlay</a>
+      <a href="/scoreboard-overlay" target="_blank">Open scoreboard overlay</a>
       <a href="/overlay" target="_blank">Open pre-match overlay</a>
     </nav>
     <p id="error" role="alert"></p>
@@ -133,10 +137,11 @@
     const buttons = [...document.querySelectorAll("button")];
     let currentMode = "manual";
     let preMatchPinned = false;
-    let preMatchSecondsDirty = false;
+    let salariedDurationDirty = false;
+    let unsalariedDurationDirty = false;
     let controlSocket = null;
     let currentBoutKey = null;
-    function renderBoutRecord(side, record, threshold) {
+    function renderBoutRecord(side, record, threshold, announcedWinner) {
       const container = document.getElementById(`${side}-record`);
       container.replaceChildren();
       if (!record) {
@@ -147,9 +152,14 @@
       const wins = document.createElement(
         typeof record.wins === "number" && record.wins >= threshold ? "strong" : "span"
       );
+      wins.classList.toggle("announced-result", announcedWinner === side);
       wins.textContent = String(record.wins);
       const losses = document.createElement(
         typeof record.losses === "number" && record.losses >= threshold ? "strong" : "span"
+      );
+      losses.classList.toggle(
+        "announced-result",
+        announcedWinner !== null && announcedWinner !== undefined && announcedWinner !== side
       );
       losses.textContent = String(record.losses);
       container.append(wins, document.createTextNode("-"), losses);
@@ -186,8 +196,8 @@
       document.getElementById("east-rank").textContent = state.east.rank || "";
       document.getElementById("west-rank").textContent = state.west.rank || "";
       const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
-      renderBoutRecord("east", state.east.record, emphasisThreshold);
-      renderBoutRecord("west", state.west.record, emphasisThreshold);
+      renderBoutRecord("east", state.east.record, emphasisThreshold, state.announcedWinner);
+      renderBoutRecord("west", state.west.record, emphasisThreshold, state.announcedWinner);
       if (state.headToHead) {
         document.getElementById("head-to-head").textContent =
           `Head to head: ${state.headToHead.eastWins} - ${state.headToHead.westWins} (${state.headToHead.total} bouts)`;
@@ -203,9 +213,13 @@
         currentMode === "automated"
           ? "OCR can select the bout when either wrestler's name is recognized clearly enough."
           : "Use Previous/Next to select bouts manually.";
-      const durationInput = document.getElementById("pre-match-seconds");
-      if (!preMatchSecondsDirty && document.activeElement !== durationInput) {
-        durationInput.value = response.settings.control.pre_match_seconds;
+      const salariedDurationInput = document.getElementById("pre-match-salaried-seconds");
+      const unsalariedDurationInput = document.getElementById("pre-match-unsalaried-seconds");
+      if (!salariedDurationDirty && document.activeElement !== salariedDurationInput) {
+        salariedDurationInput.value = response.settings.control.pre_match_salaried_seconds;
+      }
+      if (!unsalariedDurationDirty && document.activeElement !== unsalariedDurationInput) {
+        unsalariedDurationInput.value = response.settings.control.pre_match_unsalaried_seconds;
       }
       preMatchPinned = response.settings.control.pre_match_pinned;
       document.getElementById("pre-match-pin").textContent =
@@ -307,8 +321,11 @@
     document.getElementById("mode-toggle").addEventListener("click", toggleMode);
     document.getElementById("pre-match-pin").addEventListener("click", togglePinnedPreMatch);
     document.getElementById("save-duration").addEventListener("click", saveDuration);
-    document.getElementById("pre-match-seconds").addEventListener("input", () => {
-      preMatchSecondsDirty = true;
+    document.getElementById("pre-match-salaried-seconds").addEventListener("input", () => {
+      salariedDurationDirty = true;
+    });
+    document.getElementById("pre-match-unsalaried-seconds").addEventListener("input", () => {
+      unsalariedDurationDirty = true;
     });
     if (typeof io === "function") {
       controlSocket = io();
@@ -319,7 +336,8 @@
             settings: {
               control: {
                 mode: state.settings.mode,
-                pre_match_seconds: state.settings.preMatchSeconds,
+                pre_match_salaried_seconds: state.settings.preMatchSalariedSeconds,
+                pre_match_unsalaried_seconds: state.settings.preMatchUnsalariedSeconds,
                 pre_match_pinned: state.settings.preMatchPinned
               }
             },
@@ -412,18 +430,29 @@
       updatePreMatch({ pinned: !preMatchPinned });
     }
     function saveDuration() {
-      const value = Number(document.getElementById("pre-match-seconds").value);
-      if (!Number.isFinite(value) || value < 0) {
+      const salariedSeconds = Number(
+        document.getElementById("pre-match-salaried-seconds").value
+      );
+      const unsalariedSeconds = Number(
+        document.getElementById("pre-match-unsalaried-seconds").value
+      );
+      if (
+        !Number.isFinite(salariedSeconds) || salariedSeconds < 0 ||
+        !Number.isFinite(unsalariedSeconds) || unsalariedSeconds < 0
+      ) {
         document.getElementById("error").textContent =
-          "Pre-match duration must be a number that is zero or greater.";
+          "Both pre-match durations must be numbers that are zero or greater.";
         return;
       }
-      updatePreMatch({ seconds: value });
+      updatePreMatch({ salaried_seconds: salariedSeconds, unsalaried_seconds: unsalariedSeconds });
     }
     function updatePreMatch(settings) {
       setBusy(true);
       document.getElementById("error").textContent = "";
-      const savesDuration = Object.prototype.hasOwnProperty.call(settings, "seconds");
+      const savesSalariedDuration =
+        Object.prototype.hasOwnProperty.call(settings, "salaried_seconds");
+      const savesUnsalariedDuration =
+        Object.prototype.hasOwnProperty.call(settings, "unsalaried_seconds");
       fetch("/api/control/pre-match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -432,11 +461,15 @@
         .then(async response => {
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error || "Unable to update pre-match display");
-          if (
-            savesDuration &&
-            Number(document.getElementById("pre-match-seconds").value) === settings.seconds
-          ) {
-            preMatchSecondsDirty = false;
+          if (savesSalariedDuration &&
+            Number(document.getElementById("pre-match-salaried-seconds").value) ===
+              settings.salaried_seconds) {
+            salariedDurationDirty = false;
+          }
+          if (savesUnsalariedDuration &&
+            Number(document.getElementById("pre-match-unsalaried-seconds").value) ===
+              settings.unsalaried_seconds) {
+            unsalariedDurationDirty = false;
           }
           renderBout(payload);
           return loadSettings();

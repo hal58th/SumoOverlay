@@ -7,7 +7,7 @@ You can customize the two OBS overlays while keeping the app's existing state AP
 From the project folder, copy whichever overlay templates you want to customize:
 
 - `templates\pre_match_overlay.html` — the pre-match and head-to-head card
-- `templates\main_overlay.html` — the always-on lower-third
+- `templates\scoreboard_overlay.html` — the always-on scoreboard
 
 Place the copies directly in this `custom_templates` folder. Give a copy its own name, for example `my_pre_match.html` or `my_main.html`. Leave `control.html` in `templates`; it is the admin page, not an OBS overlay.
 
@@ -24,11 +24,11 @@ Set the two `templates` values to the filenames you copied. The names must be pl
 }
 ```
 
-Keep the complete JSON file valid: retain commas between properties, use double quotes, and do not add a comma after the final property. If you only customize one overlay, keep the other value set to its built-in filename, such as `main_overlay.html`.
+Keep the complete JSON file valid: retain commas between properties, use double quotes, and do not add a comma after the final property. If you only customize one overlay, keep the other value set to its built-in filename, `scoreboard_overlay.html`.
 
 Save `config.json`. With the normal settings watcher running, the selection takes effect without restarting the app. Refresh the OBS Browser Source if it does not display the new template immediately. Continue using the same OBS URLs:
 
-- Main overlay: `http://127.0.0.1:5000/main-overlay`
+- Scoreboard overlay: `http://127.0.0.1:5000/scoreboard-overlay`
 - Pre-match overlay: `http://127.0.0.1:5000/overlay`
 
 ## Keep the app integration

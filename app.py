@@ -109,8 +109,12 @@ def create_app(
             "bashoId": current["basho_id"],
             "day": current["day"],
             "mode": current["control"]["mode"],
-            "preMatchEnabled": current["control"]["pre_match_seconds"] > 0,
-            "preMatchSeconds": current["control"]["pre_match_seconds"],
+            "preMatchSalariedSeconds": current["control"][
+                "pre_match_salaried_seconds"
+            ],
+            "preMatchUnsalariedSeconds": current["control"][
+                "pre_match_unsalaried_seconds"
+            ],
             "preMatchPinned": current["control"]["pre_match_pinned"],
             "overlay": current["overlay"],
         }
@@ -146,8 +150,13 @@ def create_app(
         changed_data = any(previous[key] != new_settings[key] for key in DATA_SETTINGS)
         update_pre_match = (
             changed_data
-            or previous["control"]["pre_match_seconds"]
-            != new_settings["control"]["pre_match_seconds"]
+            or any(
+                previous["control"][key] != new_settings["control"][key]
+                for key in (
+                    "pre_match_salaried_seconds",
+                    "pre_match_unsalaried_seconds",
+                )
+            )
             or previous["control"]["pre_match_pinned"]
             != new_settings["control"]["pre_match_pinned"]
         )
@@ -213,8 +222,8 @@ def create_app(
     def pre_match_overlay() -> str:
         return render_template(current_settings()["templates"]["pre_match"])
 
-    @app.get("/main-overlay")
-    def main_overlay() -> str:
+    @app.get("/scoreboard-overlay")
+    def scoreboard_overlay() -> str:
         return render_template(current_settings()["templates"]["main"])
 
     @app.get("/control")
@@ -366,17 +375,28 @@ def create_app(
             if not isinstance(payload["pinned"], bool):
                 return jsonify({"error": "pinned must be true or false"}), 400
             updated_settings["control"]["pre_match_pinned"] = payload["pinned"]
-        if "seconds" in payload:
-            seconds = payload["seconds"]
-            if (
-                isinstance(seconds, bool)
-                or not isinstance(seconds, (int, float))
-                or seconds < 0
-            ):
-                return jsonify({"error": "seconds must be a number that is zero or greater"}), 400
-            updated_settings["control"]["pre_match_seconds"] = seconds
-        if not any(key in payload for key in ("seconds", "pinned")):
-            return jsonify({"error": "provide seconds and/or pinned"}), 400
+        duration_fields = {
+            "salaried_seconds": "pre_match_salaried_seconds",
+            "unsalaried_seconds": "pre_match_unsalaried_seconds",
+        }
+        for payload_key, setting_key in duration_fields.items():
+            if payload_key in payload:
+                seconds = payload[payload_key]
+                if (
+                    isinstance(seconds, bool)
+                    or not isinstance(seconds, (int, float))
+                    or seconds < 0
+                ):
+                    return jsonify({
+                        "error": f"{payload_key} must be a number that is zero or greater"
+                    }), 400
+                updated_settings["control"][setting_key] = seconds
+        if not any(
+            key in payload for key in (*duration_fields, "pinned")
+        ):
+            return jsonify({
+                "error": "provide salaried_seconds, unsalaried_seconds, and/or pinned"
+            }), 400
 
         try:
             watcher.write(updated_settings)

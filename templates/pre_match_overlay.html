@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Pre-Match Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=5) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=6) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -62,7 +62,7 @@
       return record ? `${record.wins}-${record.losses}` : "Record unavailable";
     }
 
-    function renderBoutRecord(side, record, threshold) {
+    function renderBoutRecord(side, record, threshold, announcedWinner) {
       const container = document.getElementById(`${side}-record`);
       if (!record) {
         const unavailable = document.createElement("span");
@@ -74,9 +74,14 @@
       const wins = document.createElement(
         typeof record.wins === "number" && record.wins >= threshold ? "strong" : "span"
       );
+      wins.classList.toggle("announced-result", announcedWinner === side);
       wins.textContent = String(record.wins);
       const losses = document.createElement(
         typeof record.losses === "number" && record.losses >= threshold ? "strong" : "span"
+      );
+      losses.classList.toggle(
+        "announced-result",
+        announcedWinner !== null && announcedWinner !== undefined && announcedWinner !== side
       );
       losses.textContent = String(record.losses);
       container.replaceChildren(wins, document.createTextNode("-"), losses);
@@ -230,8 +235,8 @@
       document.getElementById("east-rank").textContent = state.east.rank || "Rank unavailable";
       document.getElementById("west-rank").textContent = state.west.rank || "Rank unavailable";
       const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
-      renderBoutRecord("east", state.east.record, emphasisThreshold);
-      renderBoutRecord("west", state.west.record, emphasisThreshold);
+      renderBoutRecord("east", state.east.record, emphasisThreshold, state.announcedWinner);
+      renderBoutRecord("west", state.west.record, emphasisThreshold, state.announcedWinner);
       const profiles = state.wrestlerProfiles || {};
       const eastProfile = profiles.east || {};
       const westProfile = profiles.west || {};
@@ -304,8 +309,13 @@
         preMatchOverlay.hidden = true;
         return;
       }
-      const seconds = Math.max(0, state.settings.preMatchSeconds);
-      if (!state.settings.preMatchEnabled || seconds === 0) {
+      const seconds = Math.max(
+        0,
+        state.divisionNumber <= 2
+          ? state.settings.preMatchSalariedSeconds
+          : state.settings.preMatchUnsalariedSeconds
+      );
+      if (seconds === 0) {
         preMatchOverlay.hidden = true;
         return;
       }
@@ -327,8 +337,8 @@
         state.west.rikishiId
       ].join(":");
       const timerKey = [
-        state.settings && state.settings.preMatchEnabled,
-        state.settings && state.settings.preMatchSeconds,
+        state.settings && state.settings.preMatchSalariedSeconds,
+        state.settings && state.settings.preMatchUnsalariedSeconds,
         state.settings && state.settings.preMatchPinned
       ].join(":");
       const recordKey = [
@@ -348,8 +358,8 @@
         renderBout(state, justUnpinned);
       } else if (recordChanged) {
         const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
-        renderBoutRecord("east", state.east.record, emphasisThreshold);
-        renderBoutRecord("west", state.west.record, emphasisThreshold);
+        renderBoutRecord("east", state.east.record, emphasisThreshold, state.announcedWinner);
+        renderBoutRecord("west", state.west.record, emphasisThreshold, state.announcedWinner);
       }
     }
 

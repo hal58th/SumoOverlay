@@ -34,7 +34,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     },
     "control": {
         "mode": "manual",
-        "pre_match_seconds": 10,
+        "pre_match_salaried_seconds": 10,
+        "pre_match_unsalaried_seconds": 10,
         "pre_match_pinned": False,
     },
     "ocr": {
@@ -43,6 +44,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "interval_seconds": 1,
         "stable_readings": 2,
         "minimum_confidence": 0.25,
+        "capture_regions": {
+            "abema_scoresheet": {
+                "x": 0,
+                "y": 0,
+                "width": 1920,
+                "height": 1080,
+            },
+        },
         "name_boxes": {
             "left": {"x": 298, "y": 38, "width": 250, "height": 49},
             "right": {"x": 653, "y": 38, "width": 250, "height": 49},
@@ -53,11 +62,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "pre_match": {"width": 1840, "height": 1000, "opacity": 0.5},
     },
     "templates": {
-        "main": "main_overlay.html",
+        "main": "scoreboard_overlay.html",
         "pre_match": "pre_match_overlay.html",
-    },
-    "capture_regions": {
-        "abema_scoresheet": {"x": 0, "y": 0, "width": 1920, "height": 1080},
     },
 }
 
@@ -160,25 +166,29 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         raise SettingsError("control.mode must be 'manual' or 'automated'")
     if not isinstance(control["pre_match_pinned"], bool):
         raise SettingsError("control.pre_match_pinned must be true or false")
-    control["pre_match_seconds"] = _positive_number(
-        control["pre_match_seconds"], "control.pre_match_seconds", allow_zero=True
-    )
+    for group in ("salaried", "unsalaried"):
+        setting = f"pre_match_{group}_seconds"
+        control[setting] = _positive_number(
+            control[setting], f"control.{setting}", allow_zero=True
+        )
     settings["control"] = control
-
-    capture_regions = settings.get("capture_regions")
-    if not isinstance(capture_regions, dict):
-        raise SettingsError("capture_regions must be a JSON object")
-    if "abema_scoresheet" not in capture_regions:
-        raise SettingsError("capture_regions.abema_scoresheet is required")
-    capture_region = _validate_bounds(
-        capture_regions["abema_scoresheet"], "capture_regions.abema_scoresheet"
-    )
-    settings["capture_regions"] = {"abema_scoresheet": capture_region}
 
     ocr = settings.get("ocr")
     if not isinstance(ocr, dict):
         raise SettingsError("ocr must be a JSON object")
+    unknown_ocr_keys = set(ocr) - set(default_settings()["ocr"])
+    if unknown_ocr_keys:
+        raise SettingsError(f"Unknown OCR setting: {sorted(unknown_ocr_keys)[0]}")
     ocr = {**default_settings()["ocr"], **ocr}
+    capture_regions = ocr.get("capture_regions")
+    if not isinstance(capture_regions, dict):
+        raise SettingsError("ocr.capture_regions must be a JSON object")
+    if "abema_scoresheet" not in capture_regions:
+        raise SettingsError("ocr.capture_regions.abema_scoresheet is required")
+    capture_region = _validate_bounds(
+        capture_regions["abema_scoresheet"], "ocr.capture_regions.abema_scoresheet"
+    )
+    ocr["capture_regions"] = {"abema_scoresheet": capture_region}
     if not isinstance(ocr["enabled"], bool):
         raise SettingsError("ocr.enabled must be true or false")
     if (
@@ -220,7 +230,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             or box["y"] + box["height"] > capture_region["height"]
         ):
             raise SettingsError(
-                f"ocr.name_boxes.{side} must fit inside capture_regions.abema_scoresheet"
+                f"ocr.name_boxes.{side} must fit inside ocr.capture_regions.abema_scoresheet"
             )
     ocr["name_boxes"] = normalized_boxes
     settings["ocr"] = ocr

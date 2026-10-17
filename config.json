@@ -13,7 +13,8 @@
   },
   "control": {
     "mode": "automated",
-    "pre_match_seconds": 20,
+    "pre_match_salaried_seconds": 30,
+    "pre_match_unsalaried_seconds": 20,
     "pre_match_pinned": false
   },
   "ocr": {
@@ -22,6 +23,14 @@
     "interval_seconds": 1,
     "stable_readings": 2,
     "minimum_confidence": 0.25,
+    "capture_regions": {
+      "abema_scoresheet": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1080
+      }
+    },
     "name_boxes": {
       "left": {
         "x": 298,
@@ -49,15 +58,7 @@
     }
   },
   "templates": {
-    "main": "main_overlay.html",
+    "main": "scoreboard_overlay.html",
     "pre_match": "pre_match_overlay.html"
-  },
-  "capture_regions": {
-    "abema_scoresheet": {
-      "x": 0,
-      "y": 0,
-      "width": 1920,
-      "height": 1080
-    }
   }
 }

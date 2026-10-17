@@ -144,12 +144,3 @@ def test_reader_is_cpu_only_and_limits_torch_threads(monkeypatch):
     assert scanner._load_reader() is expected_reader
     assert reader_options == {"languages": ["ja"], "gpu": False, "verbose": False}
     assert thread_limits == [2]
-
-
-def test_wsl_screen_capture_reports_windows_desktop_limitation(monkeypatch):
-    monkeypatch.setattr("ocr_scanner.sys.platform", "linux")
-    monkeypatch.setenv("WSL_DISTRO_NAME", "AlmaLinux")
-    scanner = OCRScanner(lambda: {}, lambda left, right: None, logging.getLogger("test-ocr"))
-
-    with pytest.raises(RuntimeError, match="cannot read the Windows desktop from WSL"):
-        scanner._capture_and_read({})

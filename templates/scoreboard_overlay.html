@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumo Main Overlay</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=8) }}">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <main id="main-overlay" class="configured-box main-strip" hidden aria-live="polite">
+    <span class="main-wrestler">
+      <span id="east-name" class="main-name"></span>
+      <span class="main-rank-score">
+        <span id="east-rank" class="main-rank"></span>
+        <span id="east-record" class="main-record"></span>
+      </span>
+    </span>
+    <span class="main-center">
+      <span id="division" class="main-division"></span>
+      <span class="main-versus">VS</span>
+    </span>
+    <span class="main-wrestler">
+      <span id="west-name" class="main-name"></span>
+      <span class="main-rank-score">
+        <span id="west-rank" class="main-rank"></span>
+        <span id="west-record" class="main-record"></span>
+      </span>
+    </span>
+  </main>
+  <script>
+    const mainOverlay = document.getElementById("main-overlay");
+
+    function abbreviatedRank(rank) {
+      if (!rank) return "—";
+      const match = rank.match(/^(Yokozuna|Ozeki|Sekiwake|Komusubi|Maegashira|Juryo|Makushita|Sandanme|Jonidan|Jonokuchi)\s*(\d+)?(?:\s+(East|West))?/i);
+      if (!match) return rank;
+      const abbreviations = {
+        yokozuna: "Y", ozeki: "O", sekiwake: "S", komusubi: "K",
+        maegashira: "M", juryo: "J", makushita: "Ms", sandanme: "Sd",
+        jonidan: "Jd", jonokuchi: "Jk"
+      };
+      const side = match[3] ? ` ${match[3][0]}` : "";
+      return `${abbreviations[match[1].toLowerCase()]}${match[2] || ""}${side}`;
+    }
+
+    function renderBoutRecord(side, record, threshold, announcedWinner) {
+      const container = document.getElementById(`${side}-record`);
+      container.replaceChildren();
+      if (!record) {
+        container.textContent = "—";
+        return;
+      }
+
+      const wins = document.createElement(
+        typeof record.wins === "number" && record.wins >= threshold ? "strong" : "span"
+      );
+      wins.classList.toggle("announced-result", announcedWinner === side);
+      wins.textContent = String(record.wins);
+      const losses = document.createElement(
+        typeof record.losses === "number" && record.losses >= threshold ? "strong" : "span"
+      );
+      losses.classList.toggle(
+        "announced-result",
+        announcedWinner !== null && announcedWinner !== undefined && announcedWinner !== side
+      );
+      losses.textContent = String(record.losses);
+      container.append(wins, document.createTextNode("-"), losses);
+    }
+
+    function divisionLabel(division) {
+      const divisionNumbers = {
+        Makuuchi: 1,
+        Juryo: 2,
+        Makushita: 3,
+        Sandanme: 4,
+        Jonidan: 5,
+        Jonokuchi: 6
+      };
+      const number = divisionNumbers[division];
+      return number ? `Div ${number}` : "Division";
+    }
+
+    function renderBout(state) {
+      if (!state.settings || !state.settings.overlay) return;
+      mainOverlay.style.width = `${state.settings.overlay.main.width}px`;
+      mainOverlay.style.height = `${state.settings.overlay.main.height}px`;
+      document.getElementById("division").textContent = divisionLabel(state.division);
+      document.getElementById("east-name").textContent = state.east.name;
+      document.getElementById("west-name").textContent = state.west.name;
+      const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
+      renderBoutRecord("east", state.east.record, emphasisThreshold, state.announcedWinner);
+      renderBoutRecord("west", state.west.record, emphasisThreshold, state.announcedWinner);
+      document.getElementById("east-rank").textContent = abbreviatedRank(state.east.rank);
+      document.getElementById("west-rank").textContent = abbreviatedRank(state.west.rank);
+      mainOverlay.hidden = false;
+    }
+
+    fetch("/api/state")
+      .then(response => {
+        if (!response.ok) throw new Error("Unable to load bout state");
+        return response.json();
+      })
+      .then(renderBout)
+      .catch(error => console.error(error));
+
+    if (typeof io === "function") {
+      const socket = io();
+      socket.on("bout_update", renderBout);
+      socket.on("bout_result", renderBout);
+      socket.on("connect_error", error => console.error("Overlay connection failed:", error));
+    } else {
+      window.setInterval(() => {
+        fetch("/api/state")
+          .then(response => {
+            if (!response.ok) throw new Error("Unable to load bout state");
+            return response.json();
+          })
+          .then(renderBout)
+          .catch(error => console.error(error));
+      }, 1000);
+    }
+  </script>
+</body>
+</html>

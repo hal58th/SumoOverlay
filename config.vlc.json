@@ -1,16 +1,16 @@
 {
-  "capture_regions": {
-    "abema_scoresheet": {
+  "ocr": {
+    "capture_regions": {
+      "abema_scoresheet": {
         "x": 803,
         "y": 146,
         "width": 1000,
         "height": 100
-    }
+      }
     },
-    "ocr": {
     "name_boxes": {
-        "left":  { "x": 0,   "y": 0, "width": 400, "height": 100 },
-        "right": { "x": 600, "y": 0, "width": 400, "height": 100 }
+      "left": { "x": 0, "y": 0, "width": 400, "height": 100 },
+      "right": { "x": 600, "y": 0, "width": 400, "height": 100 }
     }
   },
   "basho_id": "202609",
