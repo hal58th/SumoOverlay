@@ -27,8 +27,8 @@ Keep the complete YAML file valid and preserve its indentation. If you only cust
 
 Save `config.yaml`. With the normal settings watcher running, the selection takes effect without restarting the app. Refresh the OBS Browser Source if it does not display the new template immediately. Continue using the same OBS URLs:
 
-- Scoreboard overlay: `http://127.0.0.1:5000/scoreboard-overlay`
-- Pre-match overlay: `http://127.0.0.1:5000/overlay`
+- Scoreboard overlay: `http://127.0.0.1:5000/scoreboard`
+- Pre-match overlay: `http://127.0.0.1:5000/prematch`
 
 ## Keep the app integration
 

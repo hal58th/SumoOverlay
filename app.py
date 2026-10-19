@@ -217,12 +217,11 @@ def create_app(
     app.extensions["sumo_schedule"] = schedule
     app.extensions["settings_watcher"] = watcher
 
-    @app.get("/overlay")
-    @app.get("/pre-match-overlay")
+    @app.get("/prematch")
     def pre_match_overlay() -> str:
         return render_template(current_settings()["templates"]["pre_match"])
 
-    @app.get("/scoreboard-overlay")
+    @app.get("/scoreboard")
     def scoreboard_overlay() -> str:
         return render_template(current_settings()["templates"]["main"])
 

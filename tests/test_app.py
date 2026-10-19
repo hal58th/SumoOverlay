@@ -238,11 +238,13 @@ def test_pages_and_kanji_lookup_are_available():
     app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
     client = app.test_client()
 
-    assert client.get("/overlay").status_code == 200
-    assert client.get("/pre-match-overlay").status_code == 200
-    scoreboard_overlay = client.get("/scoreboard-overlay")
+    assert client.get("/prematch").status_code == 200
+    assert client.get("/pre-match-overlay").status_code == 404
+    assert client.get("/overlay").status_code == 404
+    scoreboard_overlay = client.get("/scoreboard")
     assert scoreboard_overlay.status_code == 200
     assert client.get("/main-overlay").status_code == 404
+    assert client.get("/scoreboard-overlay").status_code == 404
     assert 'Makuuchi: 1' in scoreboard_overlay.text
     assert "return number ? `Div ${number}` : \"Division\";" in scoreboard_overlay.text
     assert "fitNameToWidth" not in scoreboard_overlay.text
@@ -267,7 +269,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert "clamp(" not in all_styles
     assert "vw" not in all_styles
     assert "vh" not in all_styles
-    pre_match_html = client.get("/overlay").text
+    pre_match_html = client.get("/prematch").text
     assert (
         "const { width, height, opacity } = state.settings.overlay.pre_match;"
         in pre_match_html
@@ -351,8 +353,10 @@ def test_overlay_routes_load_configured_custom_template_files(tmp_path):
     )
     client = app.test_client()
 
-    assert b"Custom pre-match overlay" in client.get("/overlay").data
-    assert b"Makuuchi: 1" in client.get("/scoreboard-overlay").data
+    assert b"Custom pre-match overlay" in client.get("/prematch").data
+    assert b"Makuuchi: 1" in client.get("/scoreboard").data
+    assert client.get("/overlay").status_code == 404
+    assert client.get("/scoreboard-overlay").status_code == 404
     assert b"Sumo Overlay Controls" in client.get("/control").data
 
 

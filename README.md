@@ -229,8 +229,8 @@ If PowerShell says `python` is not installed, use `py` and `.\.venv\Scripts\pyth
 With the app running, open:
 
 - Control page: <http://127.0.0.1:5000/control>
-- Scoreboard overlay: <http://127.0.0.1:5000/scoreboard-overlay>
-- Pre-match overlay: <http://127.0.0.1:5000/overlay>
+- Scoreboard overlay: <http://127.0.0.1:5000/scoreboard>
+- Pre-match overlay: <http://127.0.0.1:5000/prematch>
 - Current bout JSON: <http://127.0.0.1:5000/api/state>
 - Pre-match and H2H JSON: <http://127.0.0.1:5000/api/pre-match-state>
 - Kanji-to-English lookup: <http://127.0.0.1:5000/api/lookup>
@@ -245,8 +245,8 @@ Use the separate **Salaried divisions** and **Unsalaried divisions** duration fi
 
 In OBS, add two **Browser** sources:
 
-1. Scoreboard, always-on scoresheet overlay: `http://127.0.0.1:5000/scoreboard-overlay`. Set the Browser Source width and height to `overlay.main.width` and `overlay.main.height` in `config.yaml`.
-2. Pre-match H2H card: `http://127.0.0.1:5000/overlay`. Set its Browser Source width and height to `overlay.pre_match.width` and `overlay.pre_match.height`.
+1. Scoreboard, always-on scoresheet overlay: `http://127.0.0.1:5000/scoreboard`. Set the Browser Source width and height to `overlay.main.width` and `overlay.main.height` in `config.yaml`.
+2. Pre-match H2H card: `http://127.0.0.1:5000/prematch`. Set its Browser Source width and height to `overlay.pre_match.width` and `overlay.pre_match.height`.
 
 In OBS, position each Browser Source on the scene as desired. The overlay content is rendered at the configured dimensions in fixed CSS pixels and does not scale to fit the browser viewport. To change an overlay's rendered size, edit its width and height in `config.yaml`, then use those same values for the OBS Browser Source dimensions.
 
