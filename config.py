@@ -1,15 +1,17 @@
-"""JSON settings loading, validation, and hot-reload support."""
+"""YAML settings loading, validation, and hot-reload support."""
 
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import math
 import os
+import re
 from pathlib import Path
 from threading import Event, RLock, Thread
 from typing import Any, Callable
+
+import yaml
 
 
 DIVISION_NAMES = {
@@ -21,6 +23,15 @@ DIVISION_NAMES = {
     6: "Jonokuchi",
 }
 ALL_DIVISIONS = 0
+DEFAULT_OVERLAY_STYLE = {
+    "font_family": '"Segoe UI", Arial, sans-serif',
+    "colors": {
+        "text": "#ffffff",
+        "muted": "#d4d8de",
+        "accent": "#e8bd68",
+        "result": "#ff4b4b",
+    },
+}
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "basho_id": "202505",
@@ -58,8 +69,18 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         },
     },
     "overlay": {
-        "main": {"width": 1582, "height": 174},
-        "pre_match": {"width": 1840, "height": 1000, "opacity": 0.5},
+        "control": copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+        "main": {
+            "width": 1582,
+            "height": 174,
+            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+        },
+        "pre_match": {
+            "width": 1840,
+            "height": 1000,
+            "opacity": 0.5,
+            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+        },
     },
     "templates": {
         "main": "scoreboard_overlay.html",
@@ -69,7 +90,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
 
 class SettingsError(ValueError):
-    """Raised when the JSON settings file is missing or invalid."""
+    """Raised when the YAML settings file is missing or invalid."""
 
 
 def default_settings() -> dict[str, Any]:
@@ -86,6 +107,36 @@ def _positive_number(value: Any, label: str, *, allow_zero: bool = False) -> int
         comparison = "zero or greater" if allow_zero else "greater than zero"
         raise SettingsError(f"{label} must be {comparison}")
     return value
+
+
+def _validate_overlay_style(section: dict[str, Any], label: str) -> dict[str, Any]:
+    font_family = section.get("font_family")
+    if (
+        not isinstance(font_family, str)
+        or not font_family
+        or len(font_family) > 200
+        or re.fullmatch(r"""[A-Za-z0-9 ,'"_-]+""", font_family) is None
+    ):
+        raise SettingsError(
+            f"{label}.font_family must be a CSS font-family list"
+        )
+
+    colors = section.get("colors")
+    if not isinstance(colors, dict):
+        raise SettingsError(f"{label}.colors must be an object")
+    default_colors = DEFAULT_OVERLAY_STYLE["colors"]
+    unknown_colors = set(colors) - set(default_colors)
+    if unknown_colors:
+        raise SettingsError(f"Unknown {label}.colors setting: {sorted(unknown_colors)[0]}")
+    colors = {**default_colors, **colors}
+    for name, value in colors.items():
+        if not isinstance(value, str) or re.fullmatch(
+            r"#[0-9A-Fa-f]{3,4}|#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{8}", value
+        ) is None:
+            raise SettingsError(f"{label}.colors.{name} must be a hex color")
+    section["font_family"] = font_family
+    section["colors"] = colors
+    return section
 
 
 def _validate_bounds(bounds: Any, label: str) -> dict[str, int]:
@@ -106,7 +157,7 @@ def _validate_bounds(bounds: Any, label: str) -> dict[str, int]:
 
 def validate_settings(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
-        raise SettingsError("The settings file must contain a JSON object")
+        raise SettingsError("The settings file must contain a YAML mapping")
 
     settings = default_settings()
     for key, value in raw.items():
@@ -132,7 +183,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
 
     api = settings.get("api")
     if not isinstance(api, dict):
-        raise SettingsError("api must be a JSON object")
+        raise SettingsError("api must be a YAML mapping")
     api = {**default_settings()["api"], **api}
     if not isinstance(api["base_url"], str) or not api["base_url"].startswith(("http://", "https://")):
         raise SettingsError("api.base_url must be an HTTP or HTTPS URL")
@@ -141,7 +192,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
 
     server = settings.get("server")
     if not isinstance(server, dict):
-        raise SettingsError("server must be a JSON object")
+        raise SettingsError("server must be a YAML mapping")
     server = {**default_settings()["server"], **server}
     if not isinstance(server["host"], str) or not server["host"]:
         raise SettingsError("server.host must be a non-empty string")
@@ -155,7 +206,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
 
     control = settings.get("control")
     if not isinstance(control, dict):
-        raise SettingsError("control must be a JSON object")
+        raise SettingsError("control must be a YAML mapping")
     unknown_control_keys = set(control) - set(default_settings()["control"])
     if unknown_control_keys:
         raise SettingsError(
@@ -175,14 +226,14 @@ def validate_settings(raw: Any) -> dict[str, Any]:
 
     ocr = settings.get("ocr")
     if not isinstance(ocr, dict):
-        raise SettingsError("ocr must be a JSON object")
+        raise SettingsError("ocr must be a YAML mapping")
     unknown_ocr_keys = set(ocr) - set(default_settings()["ocr"])
     if unknown_ocr_keys:
         raise SettingsError(f"Unknown OCR setting: {sorted(unknown_ocr_keys)[0]}")
     ocr = {**default_settings()["ocr"], **ocr}
     capture_regions = ocr.get("capture_regions")
     if not isinstance(capture_regions, dict):
-        raise SettingsError("ocr.capture_regions must be a JSON object")
+        raise SettingsError("ocr.capture_regions must be a YAML mapping")
     if "abema_scoresheet" not in capture_regions:
         raise SettingsError("ocr.capture_regions.abema_scoresheet is required")
     capture_region = _validate_bounds(
@@ -237,18 +288,20 @@ def validate_settings(raw: Any) -> dict[str, Any]:
 
     overlay = settings.get("overlay")
     if not isinstance(overlay, dict):
-        raise SettingsError("overlay must be a JSON object")
-    unknown_overlay_keys = set(overlay) - {"main", "pre_match"}
+        raise SettingsError("overlay must be a YAML mapping")
+    unknown_overlay_keys = set(overlay) - {"control", "main", "pre_match"}
     if unknown_overlay_keys:
         raise SettingsError(
             f"Unknown overlay setting: {sorted(unknown_overlay_keys)[0]}"
         )
     overlay_defaults = default_settings()["overlay"]
-    for key in ("main", "pre_match"):
+    for key in ("control", "main", "pre_match"):
         section = overlay.get(key, {})
         if not isinstance(section, dict):
             raise SettingsError(f"overlay.{key} must be an object")
-        allowed_keys = {"width", "height"}
+        allowed_keys = {"font_family", "colors"}
+        if key != "control":
+            allowed_keys.update({"width", "height"})
         if key == "pre_match":
             allowed_keys.add("opacity")
         unknown_keys = set(section) - allowed_keys
@@ -256,10 +309,21 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             raise SettingsError(
                 f"Unknown overlay.{key} setting: {sorted(unknown_keys)[0]}"
             )
+        if "colors" in section and not isinstance(section["colors"], dict):
+            raise SettingsError(f"overlay.{key}.colors must be an object")
     overlay = {
-        "main": {**overlay_defaults["main"], **overlay.get("main", {})},
-        "pre_match": {**overlay_defaults["pre_match"], **overlay.get("pre_match", {})},
+        key: {
+            **overlay_defaults[key],
+            **overlay.get(key, {}),
+            "colors": {
+                **overlay_defaults[key]["colors"],
+                **overlay.get(key, {}).get("colors", {}),
+            },
+        }
+        for key in ("control", "main", "pre_match")
     }
+    for key in ("control", "main", "pre_match"):
+        overlay[key] = _validate_overlay_style(overlay[key], f"overlay.{key}")
     for key in ("main", "pre_match"):
         for dimension in ("width", "height"):
             value = overlay[key].get(dimension)
@@ -280,7 +344,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
 
     templates = settings.get("templates")
     if not isinstance(templates, dict):
-        raise SettingsError("templates must be a JSON object")
+        raise SettingsError("templates must be a YAML mapping")
     unknown_template_keys = set(templates) - {"main", "pre_match"}
     if unknown_template_keys:
         raise SettingsError(f"Unknown template setting: {sorted(unknown_template_keys)[0]}")
@@ -307,21 +371,24 @@ def load_settings(path: Path, override_path: Path | None = None) -> dict[str, An
 def _read_settings_file(path: Path) -> dict[str, Any]:
     try:
         with path.open("r", encoding="utf-8") as config_file:
-            raw = json.load(config_file)
+            raw = yaml.safe_load(config_file)
     except FileNotFoundError as error:
         raise SettingsError(
-            f"Settings file not found: {path}. Create it as a JSON settings file; see README.md."
+            f"Settings file not found: {path}. Create it as a YAML settings file; see README.md."
         ) from error
-    except json.JSONDecodeError as error:
-        raise SettingsError(
-            f"Invalid JSON in {path} at line {error.lineno}, column {error.colno}: {error.msg}"
-        ) from error
+    except yaml.YAMLError as error:
+        mark = getattr(error, "problem_mark", None)
+        location = (
+            f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
+        )
+        problem = getattr(error, "problem", None) or str(error)
+        raise SettingsError(f"Invalid YAML in {path}{location}: {problem}") from error
     except UnicodeDecodeError as error:
-        raise SettingsError(f"Settings file {path} must be UTF-8 encoded JSON") from error
+        raise SettingsError(f"Settings file {path} must be UTF-8 encoded YAML") from error
     except OSError as error:
         raise SettingsError(f"Unable to read settings file {path}: {error}") from error
     if not isinstance(raw, dict):
-        raise SettingsError(f"Settings file {path} must contain a JSON object")
+        raise SettingsError(f"Settings file {path} must contain a YAML mapping")
     return raw
 
 
@@ -374,8 +441,13 @@ def _write_settings_file(path: Path, settings: dict[str, Any], logger: logging.L
     temporary = path.with_name(f".{path.name}.tmp")
     try:
         with temporary.open("w", encoding="utf-8", newline="\n") as config_file:
-            json.dump(settings, config_file, ensure_ascii=False, indent=2)
-            config_file.write("\n")
+            yaml.safe_dump(
+                settings,
+                config_file,
+                allow_unicode=True,
+                default_flow_style=False,
+                sort_keys=False,
+            )
             config_file.flush()
             os.fsync(config_file.fileno())
         os.replace(temporary, path)

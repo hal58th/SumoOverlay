@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Pre-Match Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=6) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=7) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -52,6 +52,13 @@
     function updateOverlaySize(state) {
       if (state.settings && state.settings.overlay) {
         const { width, height, opacity } = state.settings.overlay.pre_match;
+        const style = state.settings.overlay.pre_match;
+        const root = document.documentElement;
+        root.style.setProperty("--overlay-font-family", style.font_family);
+        root.style.setProperty("--overlay-text-color", style.colors.text);
+        root.style.setProperty("--overlay-muted-color", style.colors.muted);
+        root.style.setProperty("--overlay-accent-color", style.colors.accent);
+        root.style.setProperty("--overlay-result-color", style.colors.result);
         preMatchOverlay.style.width = `${width}px`;
         preMatchOverlay.style.height = `${height}px`;
         preMatchOverlay.style.setProperty("--pre-match-opacity", String(opacity));

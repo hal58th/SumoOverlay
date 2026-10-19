@@ -13,20 +13,19 @@ Place the copies directly in this `custom_templates` folder. Give a copy its own
 
 The custom template folder is checked before the built-in `templates` folder, so the built-in template continues to work for any overlay you do not customize.
 
-## Select your files in `config.json`
+## Select your files in `config.yaml`
 
 Set the two `templates` values to the filenames you copied. The names must be plain `.html` filenames in `custom_templates` (no folder paths):
 
-```json
-"templates": {
-  "main": "my_main.html",
-  "pre_match": "my_pre_match.html"
-}
+```yaml
+templates:
+  main: my_main.html
+  pre_match: my_pre_match.html
 ```
 
-Keep the complete JSON file valid: retain commas between properties, use double quotes, and do not add a comma after the final property. If you only customize one overlay, keep the other value set to its built-in filename, `scoreboard_overlay.html`.
+Keep the complete YAML file valid and preserve its indentation. If you only customize one overlay, keep the other value set to its built-in filename, `scoreboard_overlay.html`.
 
-Save `config.json`. With the normal settings watcher running, the selection takes effect without restarting the app. Refresh the OBS Browser Source if it does not display the new template immediately. Continue using the same OBS URLs:
+Save `config.yaml`. With the normal settings watcher running, the selection takes effect without restarting the app. Refresh the OBS Browser Source if it does not display the new template immediately. Continue using the same OBS URLs:
 
 - Scoreboard overlay: `http://127.0.0.1:5000/scoreboard-overlay`
 - Pre-match overlay: `http://127.0.0.1:5000/overlay`

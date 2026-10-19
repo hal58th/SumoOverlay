@@ -1,9 +1,9 @@
-import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import yaml
 
 from app import create_app
 from config import SettingsError, default_settings, load_settings, validate_settings
@@ -336,7 +336,7 @@ def test_pre_match_wrestler_names_align_independently_of_column_content_height()
 def test_overlay_routes_load_configured_custom_template_files(tmp_path):
     settings = default_settings()
     settings["templates"]["pre_match"] = "custom_pre_match.html"
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     custom_template_dir = tmp_path / "custom_templates"
     custom_template_dir.mkdir()
@@ -357,8 +357,8 @@ def test_overlay_routes_load_configured_custom_template_files(tmp_path):
 
 
 def test_partial_override_config_merges_nested_values(tmp_path):
-    settings_path = tmp_path / "config.json"
-    override_path = tmp_path / "config.firefox.json"
+    settings_path = tmp_path / "config.yaml"
+    override_path = tmp_path / "config.firefox.yaml"
     settings = default_settings()
     settings["overlay"]["main"]["height"] = 200
     write_config(settings_path, settings)
@@ -390,8 +390,8 @@ def test_partial_override_config_merges_nested_values(tmp_path):
 
 
 def test_control_updates_persist_to_the_layer_that_defines_the_setting(tmp_path):
-    settings_path = tmp_path / "config.json"
-    override_path = tmp_path / "config.firefox.json"
+    settings_path = tmp_path / "config.yaml"
+    override_path = tmp_path / "config.firefox.yaml"
     write_config(settings_path, default_settings())
     write_config(override_path, {"control": {"pre_match_salaried_seconds": 30}})
     app = create_app(
@@ -410,10 +410,10 @@ def test_control_updates_persist_to_the_layer_that_defines_the_setting(tmp_path)
         assert response.status_code == 200
         assert response.json["settings"]["preMatchSalariedSeconds"] == 45
         assert response.json["settings"]["preMatchUnsalariedSeconds"] == 10
-        assert json.loads(override_path.read_text(encoding="utf-8")) == {
+        assert yaml.safe_load(override_path.read_text(encoding="utf-8")) == {
             "control": {"pre_match_salaried_seconds": 45}
         }
-        assert json.loads(settings_path.read_text(encoding="utf-8"))["control"][
+        assert yaml.safe_load(settings_path.read_text(encoding="utf-8"))["control"][
             "pre_match_salaried_seconds"
         ] == 10
     finally:
@@ -421,8 +421,8 @@ def test_control_updates_persist_to_the_layer_that_defines_the_setting(tmp_path)
 
 
 def test_override_config_changes_are_hot_reloaded(tmp_path):
-    settings_path = tmp_path / "config.json"
-    override_path = tmp_path / "config.firefox.json"
+    settings_path = tmp_path / "config.yaml"
+    override_path = tmp_path / "config.firefox.yaml"
     settings = default_settings()
     settings["server"]["watch_interval_seconds"] = 0.05
     write_config(settings_path, settings)
@@ -458,7 +458,7 @@ def test_template_settings_accept_only_plain_html_filenames(tmp_path):
 
     settings = default_settings()
     settings["templates"]["pre_match"] = "missing_overlay.html"
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     with pytest.raises(SettingsError, match="was not found"):
         create_app(
@@ -631,7 +631,8 @@ def test_overlay_dimensions_are_positive_integers_and_reject_position_settings()
     settings["overlay"]["main"] = {"width": 1200, "height": 180}
     settings["overlay"]["pre_match"] = {"width": 1600, "height": 900, "opacity": 0.75}
     validated = validate_settings(settings)
-    assert validated["overlay"] == settings["overlay"]
+    assert validated["overlay"]["main"]["width"] == 1200
+    assert validated["overlay"]["pre_match"]["opacity"] == 0.75
 
     settings["overlay"]["main"]["width"] = 0
     with pytest.raises(SettingsError, match="overlay.main.width"):
@@ -665,10 +666,49 @@ def test_pre_match_opacity_accepts_values_from_zero_through_one(opacity):
     assert validate_settings(settings)["overlay"]["pre_match"]["opacity"] == opacity
 
 
+def test_overlay_font_and_colors_are_independent_and_validated():
+    settings = default_settings()
+    settings["overlay"]["control"]["font_family"] = '"Arial", sans-serif'
+    settings["overlay"]["control"]["colors"]["text"] = "#123456"
+    settings["overlay"]["pre_match"]["colors"]["accent"] = "#abc"
+    settings["overlay"]["main"]["colors"]["result"] = "#abcdef"
+
+    validated = validate_settings(settings)
+
+    assert validated["overlay"]["control"]["font_family"] == '"Arial", sans-serif'
+    assert validated["overlay"]["control"]["colors"]["text"] == "#123456"
+    assert validated["overlay"]["pre_match"]["colors"]["accent"] == "#abc"
+    assert validated["overlay"]["main"]["colors"]["result"] == "#abcdef"
+    assert validated["overlay"]["main"]["colors"]["text"] == "#ffffff"
+
+
+@pytest.mark.parametrize(
+    ("setting", "value", "error"),
+    [
+        ("font_family", 'Arial; color: red', "font_family"),
+        ("colors", "red", "colors must be an object"),
+    ],
+)
+def test_overlay_font_settings_reject_invalid_values(setting, value, error):
+    settings = default_settings()
+    settings["overlay"]["main"][setting] = value
+
+    with pytest.raises(SettingsError, match=error):
+        validate_settings(settings)
+
+
+def test_overlay_colors_reject_invalid_color_values():
+    settings = default_settings()
+    settings["overlay"]["pre_match"]["colors"]["text"] = "red"
+
+    with pytest.raises(SettingsError, match="overlay.pre_match.colors.text"):
+        validate_settings(settings)
+
+
 def test_numeric_division_is_converted_to_api_division_name(tmp_path, monkeypatch):
     settings = default_settings()
     settings["division"] = 3
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     calls = []
 
@@ -719,7 +759,10 @@ def test_division_jump_rejects_invalid_or_unloaded_division():
 
 
 def write_config(path, settings):
-    path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    path.write_text(
+        yaml.safe_dump(settings, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
 
 
 def test_ocr_match_selects_bout_and_broadcasts_overlay_updates(tmp_path):
@@ -734,7 +777,7 @@ def test_ocr_match_selects_bout_and_broadcasts_overlay_updates(tmp_path):
 
     settings = default_settings()
     settings["control"]["mode"] = "automated"
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     app = create_app(
         schedule=OCRSchedule([make_bout(1, 10, 11), make_bout(2, 12, 13)]),
@@ -764,7 +807,7 @@ def test_ocr_match_selects_bout_when_only_one_name_is_recognized(tmp_path):
 
     settings = default_settings()
     settings["control"]["mode"] = "automated"
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     app = create_app(
         schedule=OCRSchedule([make_bout(1, 10, 11), make_bout(2, 12, 13)]),
@@ -785,7 +828,7 @@ def test_ocr_retriggers_pre_match_for_the_already_selected_bout(tmp_path):
 
     settings = default_settings()
     settings["control"]["mode"] = "automated"
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     app = create_app(
         schedule=OCRSchedule([make_bout(1, 10, 11)]),
@@ -804,8 +847,8 @@ def test_ocr_retriggers_pre_match_for_the_already_selected_bout(tmp_path):
     socket_client.disconnect()
 
 
-def test_control_mode_is_persisted_to_json_config(tmp_path):
-    settings_path = tmp_path / "config.json"
+def test_control_mode_is_persisted_to_yaml_config(tmp_path):
+    settings_path = tmp_path / "config.yaml"
     settings = default_settings()
     settings["server"]["watch_interval_seconds"] = 0.1
     write_config(settings_path, settings)
@@ -818,7 +861,7 @@ def test_control_mode_is_persisted_to_json_config(tmp_path):
 
     try:
         response = app.test_client().post("/api/control/mode", json={"mode": "automated"})
-        saved_settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        saved_settings = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
         assert response.status_code == 200
         assert response.json["settings"]["mode"] == "automated"
         assert response.json["settings"]["preMatchSalariedSeconds"] == 10
@@ -834,8 +877,8 @@ def test_control_mode_is_persisted_to_json_config(tmp_path):
         app.extensions["settings_watcher"].stop()
 
 
-def test_external_json_edit_hot_reloads_overlay_settings(tmp_path):
-    settings_path = tmp_path / "config.json"
+def test_external_yaml_edit_hot_reloads_overlay_settings(tmp_path):
+    settings_path = tmp_path / "config.yaml"
     settings = default_settings()
     settings["server"]["watch_interval_seconds"] = 0.05
     write_config(settings_path, settings)
@@ -850,7 +893,9 @@ def test_external_json_edit_hot_reloads_overlay_settings(tmp_path):
     try:
         settings["control"]["mode"] = "automated"
         settings["overlay"]["main"]["width"] = 1600
+        settings["overlay"]["main"]["colors"]["accent"] = "#ff00ff"
         settings["overlay"]["pre_match"]["height"] = 900
+        settings["overlay"]["control"]["font_family"] = "Arial, sans-serif"
         settings["ocr"]["capture_regions"]["abema_scoresheet"]["x"] = 120
         write_config(settings_path, settings)
         deadline = time.monotonic() + 3
@@ -859,11 +904,18 @@ def test_external_json_edit_hot_reloads_overlay_settings(tmp_path):
             if (
                 response["settings"]["control"]["mode"] == "automated"
                 and response["settings"]["overlay"]["main"]["width"] == 1600
+                and response["settings"]["overlay"]["main"]["colors"]["accent"]
+                == "#ff00ff"
             ):
                 break
             time.sleep(0.05)
         assert response["settings"]["control"]["mode"] == "automated"
+        assert response["settings"]["overlay"]["control"]["font_family"] == "Arial, sans-serif"
         assert client.get("/api/state").json["settings"]["overlay"]["main"]["width"] == 1600
+        assert (
+            client.get("/api/state").json["settings"]["overlay"]["main"]["colors"]["accent"]
+            == "#ff00ff"
+        )
         assert client.get("/api/pre-match-state").json["settings"]["overlay"]["pre_match"]["height"] == 900
         assert client.get("/api/settings").json["settings"]["ocr"]["capture_regions"][
             "abema_scoresheet"
@@ -873,7 +925,7 @@ def test_external_json_edit_hot_reloads_overlay_settings(tmp_path):
 
 
 def test_invalid_hot_reload_keeps_last_good_configuration(tmp_path):
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     settings = default_settings()
     settings["server"]["watch_interval_seconds"] = 0.05
     write_config(settings_path, settings)
@@ -901,7 +953,7 @@ def test_invalid_hot_reload_keeps_last_good_configuration(tmp_path):
 
 
 def test_pre_match_toggle_is_independent_of_match_control_mode(tmp_path):
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     settings = default_settings()
     settings["control"]["mode"] = "automated"
     write_config(settings_path, settings)
@@ -917,7 +969,7 @@ def test_pre_match_toggle_is_independent_of_match_control_mode(tmp_path):
             "/api/control/pre-match",
             json={"salaried_seconds": 0, "unsalaried_seconds": 0},
         )
-        saved_settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        saved_settings = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
         assert response.status_code == 200
         assert response.json["settings"]["mode"] == "automated"
         assert response.json["settings"]["preMatchSalariedSeconds"] == 0
@@ -930,7 +982,7 @@ def test_pre_match_toggle_is_independent_of_match_control_mode(tmp_path):
 
 
 def test_pre_match_pin_keeps_overlay_visible_until_unpinned(tmp_path):
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     settings = default_settings()
     settings["control"]["pre_match_salaried_seconds"] = 0
     settings["control"]["pre_match_unsalaried_seconds"] = 0
@@ -949,7 +1001,7 @@ def test_pre_match_pin_keeps_overlay_visible_until_unpinned(tmp_path):
         assert pinned.json["settings"]["preMatchSalariedSeconds"] == 0
         assert pinned.json["settings"]["preMatchUnsalariedSeconds"] == 0
         assert pinned.json["settings"]["preMatchPinned"] is True
-        saved_settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        saved_settings = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
         assert saved_settings["control"]["pre_match_pinned"] is True
 
         unpinned = client.post("/api/control/pre-match", json={"pinned": False})
@@ -962,7 +1014,7 @@ def test_pre_match_pin_keeps_overlay_visible_until_unpinned(tmp_path):
 
 
 def test_pre_match_duration_settings_are_independent_per_division_group(tmp_path):
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     settings = default_settings()
     settings["control"]["mode"] = "manual"
     write_config(settings_path, settings)
@@ -996,7 +1048,7 @@ def test_pre_match_duration_settings_are_independent_per_division_group(tmp_path
 
 
 def test_invalid_pre_match_control_settings_are_rejected(tmp_path):
-    settings_path = tmp_path / "config.json"
+    settings_path = tmp_path / "config.yaml"
     settings = default_settings()
     write_config(settings_path, settings)
     app = create_app(
@@ -1021,8 +1073,8 @@ def test_invalid_pre_match_control_settings_are_rejected(tmp_path):
         app.extensions["settings_watcher"].stop()
 
 
-def test_invalid_json_config_is_rejected(tmp_path):
-    settings_path = tmp_path / "config.json"
+def test_invalid_yaml_settings_is_rejected(tmp_path):
+    settings_path = tmp_path / "config.yaml"
     settings = default_settings()
     settings["control"]["mode"] = "invalid"
     write_config(settings_path, settings)
@@ -1033,3 +1085,11 @@ def test_invalid_json_config_is_rejected(tmp_path):
             config_path=settings_path,
             watch_config=False,
         )
+
+
+def test_malformed_yaml_config_reports_a_parse_error(tmp_path):
+    settings_path = tmp_path / "config.yaml"
+    settings_path.write_text("control:\n  mode: [invalid\n", encoding="utf-8")
+
+    with pytest.raises(SettingsError, match=r"Invalid YAML .* line \d+, column \d+"):
+        load_settings(settings_path)

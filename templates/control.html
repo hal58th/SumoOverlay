@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Overlay Controls</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=4) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=5) }}">
   <style>
     html.control-page { height: auto; min-height: 100%; overflow-y: auto; }
     body.control-page { display: block; height: auto; min-height: 100%; overflow-x: hidden;
-      overflow-y: auto; background: #151923; color: #f5f7fa; }
+      overflow-y: auto; background: #151923; color: var(--overlay-text-color); }
     .control-panel { width: min(620px, calc(100% - 24px)); margin: 0 auto; padding: 16px 0 24px; }
     .control-panel h1 { margin: 0 0 12px; font-size: 24px; }
     .control-panel .bout-card { position: static; width: 100%; padding: 14px; transform: none; }
@@ -18,7 +18,7 @@
     .control-panel .rank { font-size: 12px; }
     .control-panel .record { font-size: 16px; }
     .control-panel .head-to-head { margin-top: 12px; font-size: 16px; }
-    #winner-status { margin: 8px 0 0; color: #c2c8d0; font-size: 12px; text-align: center; }
+    #winner-status { margin: 8px 0 0; color: var(--overlay-muted-color); font-size: 12px; text-align: center; }
     #ocr-last-action { overflow-wrap: anywhere; }
     .winner-buttons button:first-child { background: #258b43; color: #fff; }
     .winner-buttons button:last-child { background: #7139ad; color: #fff; }
@@ -28,22 +28,22 @@
     .division-jump label { display: grid; flex: 1; gap: 4px; font-size: 13px; }
     .mode-row { display: flex; align-items: center; justify-content: space-between;
       gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
-    .mode-label { color: #e8bd68; font-weight: 700; }
+    .mode-label { color: var(--overlay-accent-color); font-weight: 700; }
     .pre-match-controls { display: grid; grid-template-columns: repeat(2, minmax(100px, 1fr)) auto;
       align-items: end; gap: 8px; margin-top: 10px; padding: 10px;
       border: 1px solid #434a56; border-radius: 8px; }
     .pre-match-duration { display: grid; gap: 4px; font-size: 13px; }
     .pre-match-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-    .pre-match-help { grid-column: 1 / -1; margin: 0; color: #c2c8d0; font-size: 12px; }
+    .pre-match-help { grid-column: 1 / -1; margin: 0; color: var(--overlay-muted-color); font-size: 12px; }
     input { min-width: 0; padding: 8px; border: 1px solid #687181; border-radius: 6px;
-      background: #202632; color: #fff; font-size: 14px; }
+      background: #202632; color: var(--overlay-text-color); font-size: 14px; }
     .links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
-    a { color: #e8bd68; }
+    a { color: var(--overlay-accent-color); }
     button { flex: 1; padding: 9px 10px; border: 0; border-radius: 6px; cursor: pointer;
       background: #e6b85c; color: #171717; font-size: 13px; font-weight: 700; }
     #mode-toggle, #pre-match-pin, #save-duration { flex: 0 0 auto; }
     button:disabled { cursor: wait; opacity: .6; }
-    #error { min-height: 1.5em; color: #ff9e9e; }
+    #error { min-height: 1.5em; color: var(--overlay-result-color); }
     @media (max-width: 520px) {
       .control-panel .bout-card { padding: 12px; }
       .control-panel .matchup { gap: 8px; }
@@ -141,6 +141,15 @@
     let unsalariedDurationDirty = false;
     let controlSocket = null;
     let currentBoutKey = null;
+    function applyOverlayStyle(style) {
+      const root = document.documentElement;
+      root.style.setProperty("--overlay-font-family", style.font_family);
+      root.style.setProperty("--overlay-text-color", style.colors.text);
+      root.style.setProperty("--overlay-muted-color", style.colors.muted);
+      root.style.setProperty("--overlay-accent-color", style.colors.accent);
+      root.style.setProperty("--overlay-result-color", style.colors.result);
+    }
+
     function renderBoutRecord(side, record, threshold, announcedWinner) {
       const container = document.getElementById(`${side}-record`);
       container.replaceChildren();
@@ -204,6 +213,7 @@
       }
     }
     function renderSettings(response) {
+      applyOverlayStyle(response.settings.overlay.control);
       currentMode = response.settings.control.mode;
       document.getElementById("mode").textContent =
         currentMode === "manual" ? "Manual" : "Automated";
@@ -254,7 +264,7 @@
           if (!response.ok) throw new Error(payload.error || "Unable to read OCR status");
           const status = document.getElementById("ocr-status");
           if (!payload.enabled) {
-            status.textContent = "OCR is disabled in config.json.";
+            status.textContent = "OCR is disabled in config.yaml.";
           } else if (payload.mode !== "automated") {
             status.textContent = "OCR is paused in manual mode.";
           } else if (payload.state === "low-confidence") {

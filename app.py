@@ -19,7 +19,7 @@ from ocr_scanner import OCRScanner
 from sumo_data import BashoSchedule, SumoApiClient, SumoApiError
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.json")
+DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.yaml")
 DATA_SETTINGS = ("basho_id", "division", "day", "api")
 
 
@@ -486,12 +486,12 @@ def main() -> None:
         "--config",
         type=Path,
         default=DEFAULT_CONFIG_PATH,
-        help=f"Path to the JSON settings file (default: {DEFAULT_CONFIG_PATH})",
+        help=f"Path to the YAML settings file (default: {DEFAULT_CONFIG_PATH})",
     )
     parser.add_argument(
         "--override-config",
         type=Path,
-        help="Path to a partial JSON settings file applied over --config",
+        help="Path to a partial YAML settings file applied over --config",
     )
     arguments = parser.parse_args()
 

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Main Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=8) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=9) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -30,6 +30,15 @@
   </main>
   <script>
     const mainOverlay = document.getElementById("main-overlay");
+
+    function applyOverlayStyle(style) {
+      const root = document.documentElement;
+      root.style.setProperty("--overlay-font-family", style.font_family);
+      root.style.setProperty("--overlay-text-color", style.colors.text);
+      root.style.setProperty("--overlay-muted-color", style.colors.muted);
+      root.style.setProperty("--overlay-accent-color", style.colors.accent);
+      root.style.setProperty("--overlay-result-color", style.colors.result);
+    }
 
     function abbreviatedRank(rank) {
       if (!rank) return "—";
@@ -83,6 +92,8 @@
 
     function renderBout(state) {
       if (!state.settings || !state.settings.overlay) return;
+      const settings = state.settings.overlay.main;
+      applyOverlayStyle(settings);
       mainOverlay.style.width = `${state.settings.overlay.main.width}px`;
       mainOverlay.style.height = `${state.settings.overlay.main.height}px`;
       document.getElementById("division").textContent = divisionLabel(state.division);
