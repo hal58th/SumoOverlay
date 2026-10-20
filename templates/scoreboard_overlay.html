@@ -92,10 +92,10 @@
 
     function renderBout(state) {
       if (!state.settings || !state.settings.overlay) return;
-      const settings = state.settings.overlay.main;
+      const settings = state.settings.overlay.scoreboard;
       applyOverlayStyle(settings);
-      mainOverlay.style.width = `${state.settings.overlay.main.width}px`;
-      mainOverlay.style.height = `${state.settings.overlay.main.height}px`;
+      mainOverlay.style.width = `${state.settings.overlay.scoreboard.width}px`;
+      mainOverlay.style.height = `${state.settings.overlay.scoreboard.height}px`;
       document.getElementById("division").textContent = divisionLabel(state.division);
       document.getElementById("east-name").textContent = state.east.name;
       document.getElementById("west-name").textContent = state.west.name;

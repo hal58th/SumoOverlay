@@ -51,8 +51,8 @@
     let lastPinned = null;
     function updateOverlaySize(state) {
       if (state.settings && state.settings.overlay) {
-        const { width, height, opacity } = state.settings.overlay.pre_match;
-        const style = state.settings.overlay.pre_match;
+        const { width, height, opacity } = state.settings.overlay.prematch;
+        const style = state.settings.overlay.prematch;
         const root = document.documentElement;
         root.style.setProperty("--overlay-font-family", style.font_family);
         root.style.setProperty("--overlay-text-color", style.colors.text);

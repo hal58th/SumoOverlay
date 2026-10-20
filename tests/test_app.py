@@ -248,8 +248,8 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'Makuuchi: 1' in scoreboard_overlay.text
     assert "return number ? `Div ${number}` : \"Division\";" in scoreboard_overlay.text
     assert "fitNameToWidth" not in scoreboard_overlay.text
-    assert "state.settings.overlay.main.width}px" in scoreboard_overlay.text
-    assert "state.settings.overlay.main.height}px" in scoreboard_overlay.text
+    assert "state.settings.overlay.scoreboard.width}px" in scoreboard_overlay.text
+    assert "state.settings.overlay.scoreboard.height}px" in scoreboard_overlay.text
     assert 'wins.classList.toggle("announced-result", announcedWinner === side);' in scoreboard_overlay.text
     assert 'state.announcedWinner' in scoreboard_overlay.text
     main_styles = client.get("/static/overlay.css").text.split(
@@ -271,7 +271,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert "vh" not in all_styles
     pre_match_html = client.get("/prematch").text
     assert (
-        "const { width, height, opacity } = state.settings.overlay.pre_match;"
+        "const { width, height, opacity } = state.settings.overlay.prematch;"
         in pre_match_html
     )
     assert "state.divisionNumber <= 2" in pre_match_html
@@ -337,7 +337,7 @@ def test_pre_match_wrestler_names_align_independently_of_column_content_height()
 
 def test_overlay_routes_load_configured_custom_template_files(tmp_path):
     settings = default_settings()
-    settings["templates"]["pre_match"] = "custom_pre_match.html"
+    settings["templates"]["prematch"] = "custom_pre_match.html"
     settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     custom_template_dir = tmp_path / "custom_templates"
@@ -364,7 +364,7 @@ def test_partial_override_config_merges_nested_values(tmp_path):
     settings_path = tmp_path / "config.yaml"
     override_path = tmp_path / "config.firefox.yaml"
     settings = default_settings()
-    settings["overlay"]["main"]["height"] = 200
+    settings["overlay"]["scoreboard"]["height"] = 200
     write_config(settings_path, settings)
     write_config(
         override_path,
@@ -375,7 +375,7 @@ def test_partial_override_config_merges_nested_values(tmp_path):
                     "abema_scoresheet": {"x": 120},
                 },
             },
-            "overlay": {"main": {"width": 1400}},
+            "overlay": {"scoreboard": {"width": 1400}},
         },
     )
 
@@ -387,8 +387,8 @@ def test_partial_override_config_merges_nested_values(tmp_path):
         **settings["ocr"]["capture_regions"]["abema_scoresheet"],
         "x": 120,
     }
-    assert effective["overlay"]["main"] == {
-        **settings["overlay"]["main"],
+    assert effective["overlay"]["scoreboard"] == {
+        **settings["overlay"]["scoreboard"],
         "width": 1400,
     }
 
@@ -455,13 +455,13 @@ def test_override_config_changes_are_hot_reloaded(tmp_path):
 
 def test_template_settings_accept_only_plain_html_filenames(tmp_path):
     settings = default_settings()
-    settings["templates"]["pre_match"] = "../outside.html"
+    settings["templates"]["prematch"] = "../outside.html"
 
     with pytest.raises(SettingsError, match="HTML filename without a path"):
         validate_settings(settings)
 
     settings = default_settings()
-    settings["templates"]["pre_match"] = "missing_overlay.html"
+    settings["templates"]["prematch"] = "missing_overlay.html"
     settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     with pytest.raises(SettingsError, match="was not found"):
@@ -632,19 +632,19 @@ def test_removed_pre_match_enabled_setting_is_rejected():
 
 def test_overlay_dimensions_are_positive_integers_and_reject_position_settings():
     settings = default_settings()
-    settings["overlay"]["main"] = {"width": 1200, "height": 180}
-    settings["overlay"]["pre_match"] = {"width": 1600, "height": 900, "opacity": 0.75}
+    settings["overlay"]["scoreboard"] = {"width": 1200, "height": 180}
+    settings["overlay"]["prematch"] = {"width": 1600, "height": 900, "opacity": 0.75}
     validated = validate_settings(settings)
-    assert validated["overlay"]["main"]["width"] == 1200
-    assert validated["overlay"]["pre_match"]["opacity"] == 0.75
+    assert validated["overlay"]["scoreboard"]["width"] == 1200
+    assert validated["overlay"]["prematch"]["opacity"] == 0.75
 
-    settings["overlay"]["main"]["width"] = 0
-    with pytest.raises(SettingsError, match="overlay.main.width"):
+    settings["overlay"]["scoreboard"]["width"] = 0
+    with pytest.raises(SettingsError, match="overlay.scoreboard.width"):
         validate_settings(settings)
 
     settings = default_settings()
-    settings["overlay"]["main"]["x"] = 10
-    with pytest.raises(SettingsError, match="Unknown overlay.main setting: x"):
+    settings["overlay"]["scoreboard"]["x"] = 10
+    with pytest.raises(SettingsError, match="Unknown overlay.scoreboard setting: x"):
         validate_settings(settings)
 
     settings = default_settings()
@@ -656,34 +656,34 @@ def test_overlay_dimensions_are_positive_integers_and_reject_position_settings()
 @pytest.mark.parametrize("opacity", [-0.1, 1.1, True, "0.5"])
 def test_pre_match_opacity_rejects_values_outside_unit_interval(opacity):
     settings = default_settings()
-    settings["overlay"]["pre_match"]["opacity"] = opacity
+    settings["overlay"]["prematch"]["opacity"] = opacity
 
-    with pytest.raises(SettingsError, match="overlay.pre_match.opacity"):
+    with pytest.raises(SettingsError, match="overlay.prematch.opacity"):
         validate_settings(settings)
 
 
 @pytest.mark.parametrize("opacity", [0, 0.5, 1])
 def test_pre_match_opacity_accepts_values_from_zero_through_one(opacity):
     settings = default_settings()
-    settings["overlay"]["pre_match"]["opacity"] = opacity
+    settings["overlay"]["prematch"]["opacity"] = opacity
 
-    assert validate_settings(settings)["overlay"]["pre_match"]["opacity"] == opacity
+    assert validate_settings(settings)["overlay"]["prematch"]["opacity"] == opacity
 
 
 def test_overlay_font_and_colors_are_independent_and_validated():
     settings = default_settings()
     settings["overlay"]["control"]["font_family"] = '"Arial", sans-serif'
     settings["overlay"]["control"]["colors"]["text"] = "#123456"
-    settings["overlay"]["pre_match"]["colors"]["accent"] = "#abc"
-    settings["overlay"]["main"]["colors"]["result"] = "#abcdef"
+    settings["overlay"]["prematch"]["colors"]["accent"] = "#abc"
+    settings["overlay"]["scoreboard"]["colors"]["result"] = "#abcdef"
 
     validated = validate_settings(settings)
 
     assert validated["overlay"]["control"]["font_family"] == '"Arial", sans-serif'
     assert validated["overlay"]["control"]["colors"]["text"] == "#123456"
-    assert validated["overlay"]["pre_match"]["colors"]["accent"] == "#abc"
-    assert validated["overlay"]["main"]["colors"]["result"] == "#abcdef"
-    assert validated["overlay"]["main"]["colors"]["text"] == "#ffffff"
+    assert validated["overlay"]["prematch"]["colors"]["accent"] == "#abc"
+    assert validated["overlay"]["scoreboard"]["colors"]["result"] == "#abcdef"
+    assert validated["overlay"]["scoreboard"]["colors"]["text"] == "#ffffff"
 
 
 @pytest.mark.parametrize(
@@ -695,7 +695,7 @@ def test_overlay_font_and_colors_are_independent_and_validated():
 )
 def test_overlay_font_settings_reject_invalid_values(setting, value, error):
     settings = default_settings()
-    settings["overlay"]["main"][setting] = value
+    settings["overlay"]["scoreboard"][setting] = value
 
     with pytest.raises(SettingsError, match=error):
         validate_settings(settings)
@@ -703,9 +703,9 @@ def test_overlay_font_settings_reject_invalid_values(setting, value, error):
 
 def test_overlay_colors_reject_invalid_color_values():
     settings = default_settings()
-    settings["overlay"]["pre_match"]["colors"]["text"] = "red"
+    settings["overlay"]["prematch"]["colors"]["text"] = "red"
 
-    with pytest.raises(SettingsError, match="overlay.pre_match.colors.text"):
+    with pytest.raises(SettingsError, match="overlay.prematch.colors.text"):
         validate_settings(settings)
 
 
@@ -896,9 +896,9 @@ def test_external_yaml_edit_hot_reloads_overlay_settings(tmp_path):
 
     try:
         settings["control"]["mode"] = "automated"
-        settings["overlay"]["main"]["width"] = 1600
-        settings["overlay"]["main"]["colors"]["accent"] = "#ff00ff"
-        settings["overlay"]["pre_match"]["height"] = 900
+        settings["overlay"]["scoreboard"]["width"] = 1600
+        settings["overlay"]["scoreboard"]["colors"]["accent"] = "#ff00ff"
+        settings["overlay"]["prematch"]["height"] = 900
         settings["overlay"]["control"]["font_family"] = "Arial, sans-serif"
         settings["ocr"]["capture_regions"]["abema_scoresheet"]["x"] = 120
         write_config(settings_path, settings)
@@ -907,20 +907,20 @@ def test_external_yaml_edit_hot_reloads_overlay_settings(tmp_path):
             response = client.get("/api/settings").json
             if (
                 response["settings"]["control"]["mode"] == "automated"
-                and response["settings"]["overlay"]["main"]["width"] == 1600
-                and response["settings"]["overlay"]["main"]["colors"]["accent"]
+                and response["settings"]["overlay"]["scoreboard"]["width"] == 1600
+                and response["settings"]["overlay"]["scoreboard"]["colors"]["accent"]
                 == "#ff00ff"
             ):
                 break
             time.sleep(0.05)
         assert response["settings"]["control"]["mode"] == "automated"
         assert response["settings"]["overlay"]["control"]["font_family"] == "Arial, sans-serif"
-        assert client.get("/api/state").json["settings"]["overlay"]["main"]["width"] == 1600
+        assert client.get("/api/state").json["settings"]["overlay"]["scoreboard"]["width"] == 1600
         assert (
-            client.get("/api/state").json["settings"]["overlay"]["main"]["colors"]["accent"]
+            client.get("/api/state").json["settings"]["overlay"]["scoreboard"]["colors"]["accent"]
             == "#ff00ff"
         )
-        assert client.get("/api/pre-match-state").json["settings"]["overlay"]["pre_match"]["height"] == 900
+        assert client.get("/api/pre-match-state").json["settings"]["overlay"]["prematch"]["height"] == 900
         assert client.get("/api/settings").json["settings"]["ocr"]["capture_regions"][
             "abema_scoresheet"
         ]["x"] == 120

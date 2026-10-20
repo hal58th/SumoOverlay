@@ -219,11 +219,11 @@ def create_app(
 
     @app.get("/prematch")
     def pre_match_overlay() -> str:
-        return render_template(current_settings()["templates"]["pre_match"])
+        return render_template(current_settings()["templates"]["prematch"])
 
     @app.get("/scoreboard")
     def scoreboard_overlay() -> str:
-        return render_template(current_settings()["templates"]["main"])
+        return render_template(current_settings()["templates"]["scoreboard"])
 
     @app.get("/control")
     def control() -> str:

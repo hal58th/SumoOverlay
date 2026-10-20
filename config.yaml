@@ -44,7 +44,7 @@ overlay:
       muted: "#d4d8de"
       accent: "#e8bd68"
       result: "#ff4b4b"
-  main:
+  scoreboard:
     width: 1582
     height: 300
     font_family: '"Segoe UI", Arial, sans-serif'
@@ -53,7 +53,7 @@ overlay:
       muted: "#d4d8de"
       accent: "#e8bd68"
       result: "#ff4b4b"
-  pre_match:
+  prematch:
     width: 1840
     height: 1000
     opacity: 0.95
@@ -64,5 +64,5 @@ overlay:
       accent: "#e8bd68"
       result: "#ff4b4b"
 templates:
-  main: scoreboard_overlay.html
-  pre_match: pre_match_overlay.html
+  scoreboard: scoreboard_overlay.html
+  prematch: pre_match_overlay.html

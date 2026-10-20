@@ -70,12 +70,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     },
     "overlay": {
         "control": copy.deepcopy(DEFAULT_OVERLAY_STYLE),
-        "main": {
+        "scoreboard": {
             "width": 1582,
             "height": 174,
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
         },
-        "pre_match": {
+        "prematch": {
             "width": 1840,
             "height": 1000,
             "opacity": 0.5,
@@ -83,8 +83,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         },
     },
     "templates": {
-        "main": "scoreboard_overlay.html",
-        "pre_match": "pre_match_overlay.html",
+        "scoreboard": "scoreboard_overlay.html",
+        "prematch": "pre_match_overlay.html",
     },
 }
 
@@ -289,20 +289,20 @@ def validate_settings(raw: Any) -> dict[str, Any]:
     overlay = settings.get("overlay")
     if not isinstance(overlay, dict):
         raise SettingsError("overlay must be a YAML mapping")
-    unknown_overlay_keys = set(overlay) - {"control", "main", "pre_match"}
+    unknown_overlay_keys = set(overlay) - {"control", "scoreboard", "prematch"}
     if unknown_overlay_keys:
         raise SettingsError(
             f"Unknown overlay setting: {sorted(unknown_overlay_keys)[0]}"
         )
     overlay_defaults = default_settings()["overlay"]
-    for key in ("control", "main", "pre_match"):
+    for key in ("control", "scoreboard", "prematch"):
         section = overlay.get(key, {})
         if not isinstance(section, dict):
             raise SettingsError(f"overlay.{key} must be an object")
         allowed_keys = {"font_family", "colors"}
         if key != "control":
             allowed_keys.update({"width", "height"})
-        if key == "pre_match":
+        if key == "prematch":
             allowed_keys.add("opacity")
         unknown_keys = set(section) - allowed_keys
         if unknown_keys:
@@ -320,11 +320,11 @@ def validate_settings(raw: Any) -> dict[str, Any]:
                 **overlay.get(key, {}).get("colors", {}),
             },
         }
-        for key in ("control", "main", "pre_match")
+        for key in ("control", "scoreboard", "prematch")
     }
-    for key in ("control", "main", "pre_match"):
+    for key in ("control", "scoreboard", "prematch"):
         overlay[key] = _validate_overlay_style(overlay[key], f"overlay.{key}")
-    for key in ("main", "pre_match"):
+    for key in ("scoreboard", "prematch"):
         for dimension in ("width", "height"):
             value = overlay[key].get(dimension)
             overlay[key][dimension] = _positive_number(
@@ -332,20 +332,20 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             )
             if not isinstance(overlay[key][dimension], int):
                 raise SettingsError(f"overlay.{key}.{dimension} must be an integer")
-    opacity = overlay["pre_match"]["opacity"]
+    opacity = overlay["prematch"]["opacity"]
     if (
         isinstance(opacity, bool)
         or not isinstance(opacity, (int, float))
         or not math.isfinite(opacity)
         or not 0 <= opacity <= 1
     ):
-        raise SettingsError("overlay.pre_match.opacity must be a number from 0 through 1")
+        raise SettingsError("overlay.prematch.opacity must be a number from 0 through 1")
     settings["overlay"] = overlay
 
     templates = settings.get("templates")
     if not isinstance(templates, dict):
         raise SettingsError("templates must be a YAML mapping")
-    unknown_template_keys = set(templates) - {"main", "pre_match"}
+    unknown_template_keys = set(templates) - {"scoreboard", "prematch"}
     if unknown_template_keys:
         raise SettingsError(f"Unknown template setting: {sorted(unknown_template_keys)[0]}")
     templates = {**default_settings()["templates"], **templates}
