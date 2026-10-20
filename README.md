@@ -33,11 +33,11 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `control.pre_match_salaried_seconds` | How long, in seconds, the pre-match overlay appears for Makuuchi and Juryo bouts. `0` disables timed auto-show for these salaried divisions. |
 | `control.pre_match_unsalaried_seconds` | How long, in seconds, the pre-match overlay appears for Makushita and lower division bouts. `0` disables timed auto-show for these unsalaried divisions. |
 | `control.pre_match_pinned` | `true` or `false`. When true, keeps the pre-match overlay visible until you hide it from the Control page. |
-| `overlay.main.width`, `overlay.main.height` | Fixed pixel width and height for the main overlay and its OBS Browser Source. |
-| `overlay.pre_match.width`, `overlay.pre_match.height` | Fixed pixel width and height for the pre-match overlay and its OBS Browser Source. |
-| `overlay.pre_match.opacity` | Background opacity of the pre-match card, from `0` (transparent) to `1` (opaque). The default is `0.5`. Text opacity is unchanged. |
-| `overlay.control`, `overlay.pre_match`, `overlay.main` | Independent font settings for the Control page, pre-match overlay, and scoreboard overlay. Each accepts `font_family` and `colors` as described below. |
-| `templates.main`, `templates.pre_match` | HTML filenames for the overlays. The app searches `custom_templates` first, then the built-in `templates` folder. |
+| `overlay.scoreboard.width`, `overlay.scoreboard.height` | Fixed pixel width and height for the main overlay and its OBS Browser Source. |
+| `overlay.prematch.width`, `overlay.prematch.height` | Fixed pixel width and height for the pre-match overlay and its OBS Browser Source. |
+| `overlay.prematch.opacity` | Background opacity of the pre-match card, from `0` (transparent) to `1` (opaque). The default is `0.5`. Text opacity is unchanged. |
+| `overlay.control`, `overlay.scoreboard`, `overlay.prematch` | Independent font settings for the Control page, pre-match overlay, and scoreboard overlay. Each accepts `font_family` and `colors` as described below. |
+| `templates.scoreboard`, `templates.prematch` | HTML filenames for the overlays. The app searches `custom_templates` first, then the built-in `templates` folder. |
 | `ocr.enabled` | Enables the OCR scanner when the app is started normally. |
 | `ocr.monitor` | MSS monitor number, starting at `1` for the first monitor (monitor `0` is the combined virtual desktop and is not used). |
 | `ocr.interval_seconds` | Delay between OCR scans. |
@@ -46,7 +46,7 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `ocr.capture_regions.abema_scoresheet`. |
 | `ocr.capture_regions.abema_scoresheet` | Rectangle around the ABEMA scoresheet, in pixels relative to the selected monitor. |
 
-Each of `overlay.control`, `overlay.pre_match`, and `overlay.main` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and records), and `result` (announced bout results and errors). For example:
+Each of `overlay.control`, `overlay.scoreboard`, and `overlay.prematch` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and records), and `result` (announced bout results and errors). For example:
 
 ```yaml
 overlay:
@@ -57,15 +57,15 @@ overlay:
       muted: "#c0c0c0"
       accent: "#ffd700"
       result: "#ff4b4b"
-  pre_match:
-    font_family: '"Georgia", serif'
+  scoreboard:
+    font_family: '"Segoe UI", Arial, sans-serif'
     colors:
       text: "#ffffff"
       muted: "#d4d8de"
       accent: "#e8bd68"
       result: "#ff4b4b"
-  main:
-    font_family: '"Segoe UI", Arial, sans-serif'
+  prematch:
+    font_family: '"Georgia", serif'
     colors:
       text: "#ffffff"
       muted: "#d4d8de"
@@ -75,7 +75,7 @@ overlay:
 
 These sections can be added alongside the other `overlay` settings in `config.yaml`. You can omit individual style settings to use their defaults. Font settings are independent per page and apply live when the configuration file is saved. Colors must be CSS hex values such as `#abc` or `#aabbcc`.
 
-Each overlay's configured width and height define its complete fixed-size image in CSS pixels. There is no canvas scaling or internal positioning; place each Browser Source where you want it in OBS. Set `overlay.pre_match.opacity` from `0` to `1` to adjust only the card background transparency; the text stays fully opaque. Capture-region coordinates refer to the selected desktop monitor, not the OBS overlay. OCR name-box coordinates are pixel offsets inside the capture region. If ABEMA moves its scoresheet, update the capture rectangle and/or name-box coordinates to match.
+Each overlay's configured width and height define its complete fixed-size image in CSS pixels. There is no canvas scaling or internal positioning; place each Browser Source where you want it in OBS. Set `overlay.prematch.opacity` from `0` to `1` to adjust only the card background transparency; the text stays fully opaque. Capture-region coordinates refer to the selected desktop monitor, not the OBS overlay. OCR name-box coordinates are pixel offsets inside the capture region. If ABEMA moves its scoresheet, update the capture rectangle and/or name-box coordinates to match.
 
 `division: 0` loads all divisions by requesting each of the six supported divisions separately; the API does not provide a working all-divisions endpoint. Bouts are combined in broadcast order. Values 1 through 6 select one division; number 1 is the top division (Makuuchi) and number 6 is Jonokuchi. Use these numeric codes in `config.yaml`.
 
@@ -108,7 +108,7 @@ ocr:
       height: 40
 ```
 
-The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor`, `ocr.capture_regions.abema_scoresheet`, or `overlay.main.width`, using their normal `config.yaml` structure.
+The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor`, `ocr.capture_regions.abema_scoresheet`, or `overlay.scoreboard.width`, using their normal `config.yaml` structure.
 
 Start the app with the profile you want:
 
@@ -245,8 +245,8 @@ Use the separate **Salaried divisions** and **Unsalaried divisions** duration fi
 
 In OBS, add two **Browser** sources:
 
-1. Scoreboard, always-on scoresheet overlay: `http://127.0.0.1:5000/scoreboard`. Set the Browser Source width and height to `overlay.main.width` and `overlay.main.height` in `config.yaml`.
-2. Pre-match H2H card: `http://127.0.0.1:5000/prematch`. Set its Browser Source width and height to `overlay.pre_match.width` and `overlay.pre_match.height`.
+1. Scoreboard, always-on scoresheet overlay: `http://127.0.0.1:5000/scoreboard`. Set the Browser Source width and height to `overlay.scoreboard.width` and `overlay.scoreboard.height` in `config.yaml`.
+2. Pre-match H2H card: `http://127.0.0.1:5000/prematch`. Set its Browser Source width and height to `overlay.prematch.width` and `overlay.prematch.height`.
 
 In OBS, position each Browser Source on the scene as desired. The overlay content is rendered at the configured dimensions in fixed CSS pixels and does not scale to fit the browser viewport. To change an overlay's rendered size, edit its width and height in `config.yaml`, then use those same values for the OBS Browser Source dimensions.
 
@@ -254,7 +254,7 @@ Both pages update live. The main overlay has a solid opaque background so it ful
 
 ## Custom overlay templates
 
-`config.yaml` selects the HTML files for the main and pre-match overlays with `templates.main` and `templates.pre_match`. By default these select the built-in pages in `templates`. To customize an overlay, copy its starter HTML file into `custom_templates`, edit the copy, and point the corresponding config value to its filename. The custom folder is searched before the built-in templates, and the Control/admin page remains unchanged. See [custom_templates/README.md](custom_templates/README.md) for step-by-step instructions.
+`config.yaml` selects the HTML files for the main and pre-match overlays with `templates.main` and `templates.prematch`. By default these select the built-in pages in `templates`. To customize an overlay, copy its starter HTML file into `custom_templates`, edit the copy, and point the corresponding config value to its filename. The custom folder is searched before the built-in templates, and the Control/admin page remains unchanged. See [custom_templates/README.md](custom_templates/README.md) for step-by-step instructions.
 
 ## Head-to-head and replay safety
 

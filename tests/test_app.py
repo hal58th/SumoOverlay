@@ -309,7 +309,7 @@ def test_announced_winner_record_counts_are_red_in_all_overlay_templates():
     root = Path(__file__).resolve().parents[1]
     templates = [
         root / "templates" / "scoreboard_overlay.html",
-        root / "templates" / "pre_match_overlay.html",
+        root / "templates" / "prematch_overlay.html",
         root / "templates" / "control.html",
     ]
     for template_path in templates:
@@ -337,12 +337,12 @@ def test_pre_match_wrestler_names_align_independently_of_column_content_height()
 
 def test_overlay_routes_load_configured_custom_template_files(tmp_path):
     settings = default_settings()
-    settings["templates"]["prematch"] = "custom_pre_match.html"
+    settings["templates"]["prematch"] = "custom_prematch.html"
     settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     custom_template_dir = tmp_path / "custom_templates"
     custom_template_dir.mkdir()
-    (custom_template_dir / "custom_pre_match.html").write_text(
+    (custom_template_dir / "custom_prematch.html").write_text(
         "<main>Custom pre-match overlay</main>", encoding="utf-8"
     )
     app = create_app(

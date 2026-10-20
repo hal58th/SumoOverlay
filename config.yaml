@@ -65,4 +65,4 @@ overlay:
       result: "#ff4b4b"
 templates:
   scoreboard: scoreboard_overlay.html
-  prematch: pre_match_overlay.html
+  prematch: prematch_overlay.html

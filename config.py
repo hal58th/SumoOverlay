@@ -84,7 +84,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     },
     "templates": {
         "scoreboard": "scoreboard_overlay.html",
-        "prematch": "pre_match_overlay.html",
+        "prematch": "prematch_overlay.html",
     },
 }
 
