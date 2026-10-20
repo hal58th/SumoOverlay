@@ -30,6 +30,7 @@ DEFAULT_OVERLAY_STYLE = {
         "muted": "#d4d8de",
         "accent": "#e8bd68",
         "result": "#ff4b4b",
+        "background": "#10141c",
     },
 }
 
@@ -69,17 +70,31 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         },
     },
     "overlay": {
-        "control": copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+        "control": {
+            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+            "colors": {
+                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
+                "background": "#151923",
+            },
+        },
         "scoreboard": {
             "width": 1582,
             "height": 174,
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+            "colors": {
+                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
+                "background": "#10141c",
+            },
         },
         "prematch": {
             "width": 1840,
             "height": 1000,
             "opacity": 0.5,
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+            "colors": {
+                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
+                "background": "#141922",
+            },
         },
     },
     "templates": {

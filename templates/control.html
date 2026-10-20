@@ -8,7 +8,7 @@
   <style>
     html.control-page { height: auto; min-height: 100%; overflow-y: auto; }
     body.control-page { display: block; height: auto; min-height: 100%; overflow-x: hidden;
-      overflow-y: auto; background: #151923; color: var(--overlay-text-color); }
+      overflow-y: auto; background: #151923; background: var(--overlay-background-color); color: var(--overlay-text-color); }
     .control-panel { width: min(620px, calc(100% - 24px)); margin: 0 auto; padding: 16px 0 24px; }
     .control-panel h1 { margin: 0 0 12px; font-size: 24px; }
     .control-panel .bout-card { position: static; width: 100%; padding: 14px; transform: none; }
@@ -148,6 +148,7 @@
       root.style.setProperty("--overlay-muted-color", style.colors.muted);
       root.style.setProperty("--overlay-accent-color", style.colors.accent);
       root.style.setProperty("--overlay-result-color", style.colors.result);
+      root.style.setProperty("--overlay-background-color", style.colors.background);
     }
 
     function renderBoutRecord(side, record, threshold, announcedWinner) {
@@ -213,7 +214,9 @@
       }
     }
     function renderSettings(response) {
-      applyOverlayStyle(response.settings.overlay.control);
+      if (response.settings && response.settings.overlay && response.settings.overlay.control) {
+        applyOverlayStyle(response.settings.overlay.control);
+      }
       currentMode = response.settings.control.mode;
       document.getElementById("mode").textContent =
         currentMode === "manual" ? "Manual" : "Automated";
@@ -344,6 +347,7 @@
         if (state.settings) {
           renderSettings({
             settings: {
+              overlay: state.settings.overlay,
               control: {
                 mode: state.settings.mode,
                 pre_match_salaried_seconds: state.settings.preMatchSalariedSeconds,

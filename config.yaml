@@ -44,15 +44,17 @@ overlay:
       muted: "#d4d8de"
       accent: "#e8bd68"
       result: "#ff4b4b"
+      background: "#151923"
   scoreboard:
     width: 1582
-    height: 300
+    height: 350
     font_family: '"Segoe UI", Arial, sans-serif'
     colors:
       text: "#ffffff"
       muted: "#d4d8de"
       accent: "#e8bd68"
       result: "#ff4b4b"
+      background: "#10141c"
   prematch:
     width: 1840
     height: 1000
@@ -63,6 +65,7 @@ overlay:
       muted: "#d4d8de"
       accent: "#e8bd68"
       result: "#ff4b4b"
+      background: "#141922"
 templates:
   scoreboard: scoreboard_overlay.html
   prematch: prematch_overlay.html

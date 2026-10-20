@@ -674,15 +674,21 @@ def test_overlay_font_and_colors_are_independent_and_validated():
     settings = default_settings()
     settings["overlay"]["control"]["font_family"] = '"Arial", sans-serif'
     settings["overlay"]["control"]["colors"]["text"] = "#123456"
+    settings["overlay"]["control"]["colors"]["background"] = "#234567"
     settings["overlay"]["prematch"]["colors"]["accent"] = "#abc"
+    settings["overlay"]["prematch"]["colors"]["background"] = "#345678"
     settings["overlay"]["scoreboard"]["colors"]["result"] = "#abcdef"
+    settings["overlay"]["scoreboard"]["colors"]["background"] = "#456789"
 
     validated = validate_settings(settings)
 
     assert validated["overlay"]["control"]["font_family"] == '"Arial", sans-serif'
     assert validated["overlay"]["control"]["colors"]["text"] == "#123456"
+    assert validated["overlay"]["control"]["colors"]["background"] == "#234567"
     assert validated["overlay"]["prematch"]["colors"]["accent"] == "#abc"
+    assert validated["overlay"]["prematch"]["colors"]["background"] == "#345678"
     assert validated["overlay"]["scoreboard"]["colors"]["result"] == "#abcdef"
+    assert validated["overlay"]["scoreboard"]["colors"]["background"] == "#456789"
     assert validated["overlay"]["scoreboard"]["colors"]["text"] == "#ffffff"
 
 
@@ -706,6 +712,12 @@ def test_overlay_colors_reject_invalid_color_values():
     settings["overlay"]["prematch"]["colors"]["text"] = "red"
 
     with pytest.raises(SettingsError, match="overlay.prematch.colors.text"):
+        validate_settings(settings)
+
+    settings = default_settings()
+    settings["overlay"]["scoreboard"]["colors"]["background"] = "blue"
+
+    with pytest.raises(SettingsError, match="overlay.scoreboard.colors.background"):
         validate_settings(settings)
 
 
@@ -898,6 +910,7 @@ def test_external_yaml_edit_hot_reloads_overlay_settings(tmp_path):
         settings["control"]["mode"] = "automated"
         settings["overlay"]["scoreboard"]["width"] = 1600
         settings["overlay"]["scoreboard"]["colors"]["accent"] = "#ff00ff"
+        settings["overlay"]["scoreboard"]["colors"]["background"] = "#112233"
         settings["overlay"]["prematch"]["height"] = 900
         settings["overlay"]["control"]["font_family"] = "Arial, sans-serif"
         settings["ocr"]["capture_regions"]["abema_scoresheet"]["x"] = 120
@@ -919,6 +932,10 @@ def test_external_yaml_edit_hot_reloads_overlay_settings(tmp_path):
         assert (
             client.get("/api/state").json["settings"]["overlay"]["scoreboard"]["colors"]["accent"]
             == "#ff00ff"
+        )
+        assert (
+            client.get("/api/state").json["settings"]["overlay"]["scoreboard"]["colors"]["background"]
+            == "#112233"
         )
         assert client.get("/api/pre-match-state").json["settings"]["overlay"]["prematch"]["height"] == 900
         assert client.get("/api/settings").json["settings"]["ocr"]["capture_regions"][
@@ -1097,3 +1114,21 @@ def test_malformed_yaml_config_reports_a_parse_error(tmp_path):
 
     with pytest.raises(SettingsError, match=r"Invalid YAML .* line \d+, column \d+"):
         load_settings(settings_path)
+
+
+def test_overlay_background_color_is_bound_in_templates_and_css():
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static" / "overlay.css").read_text(encoding="utf-8")
+    assert "--overlay-background-color: #10141c;" in css
+    assert "background: var(--overlay-background-color);" in css
+    assert "var(--overlay-background-color)" in css
+
+    control_html = (root / "templates" / "control.html").read_text(encoding="utf-8")
+    assert "background: var(--overlay-background-color)" in control_html
+    assert 'root.style.setProperty("--overlay-background-color", style.colors.background);' in control_html
+
+    scoreboard_html = (root / "templates" / "scoreboard_overlay.html").read_text(encoding="utf-8")
+    assert 'root.style.setProperty("--overlay-background-color", style.colors.background);' in scoreboard_html
+
+    prematch_html = (root / "templates" / "prematch_overlay.html").read_text(encoding="utf-8")
+    assert 'root.style.setProperty("--overlay-background-color", style.colors.background);' in prematch_html

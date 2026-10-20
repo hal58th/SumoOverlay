@@ -36,7 +36,7 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `overlay.scoreboard.width`, `overlay.scoreboard.height` | Fixed pixel width and height for the main overlay and its OBS Browser Source. |
 | `overlay.prematch.width`, `overlay.prematch.height` | Fixed pixel width and height for the pre-match overlay and its OBS Browser Source. |
 | `overlay.prematch.opacity` | Background opacity of the pre-match card, from `0` (transparent) to `1` (opaque). The default is `0.5`. Text opacity is unchanged. |
-| `overlay.control`, `overlay.scoreboard`, `overlay.prematch` | Independent font settings for the Control page, pre-match overlay, and scoreboard overlay. Each accepts `font_family` and `colors` as described below. |
+| `overlay.control`, `overlay.scoreboard`, `overlay.prematch` | Independent font and background settings for the Control page, pre-match overlay, and scoreboard overlay. Each accepts `font_family` and `colors` as described below. |
 | `templates.scoreboard`, `templates.prematch` | HTML filenames for the overlays. The app searches `custom_templates` first, then the built-in `templates` folder. |
 | `ocr.enabled` | Enables the OCR scanner when the app is started normally. |
 | `ocr.monitor` | MSS monitor number, starting at `1` for the first monitor (monitor `0` is the combined virtual desktop and is not used). |
@@ -46,7 +46,7 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `ocr.capture_regions.abema_scoresheet`. |
 | `ocr.capture_regions.abema_scoresheet` | Rectangle around the ABEMA scoresheet, in pixels relative to the selected monitor. |
 
-Each of `overlay.control`, `overlay.scoreboard`, and `overlay.prematch` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and records), and `result` (announced bout results and errors). For example:
+Each of `overlay.control`, `overlay.scoreboard`, and `overlay.prematch` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and records), `result` (announced bout results and errors), and `background` (background color). For example:
 
 ```yaml
 overlay:
@@ -57,6 +57,7 @@ overlay:
       muted: "#c0c0c0"
       accent: "#ffd700"
       result: "#ff4b4b"
+      background: "#151923"
   scoreboard:
     font_family: '"Segoe UI", Arial, sans-serif'
     colors:
@@ -64,6 +65,7 @@ overlay:
       muted: "#d4d8de"
       accent: "#e8bd68"
       result: "#ff4b4b"
+      background: "#10141c"
   prematch:
     font_family: '"Georgia", serif'
     colors:
@@ -71,6 +73,7 @@ overlay:
       muted: "#d4d8de"
       accent: "#e8bd68"
       result: "#ff4b4b"
+      background: "#141922"
 ```
 
 These sections can be added alongside the other `overlay` settings in `config.yaml`. You can omit individual style settings to use their defaults. Font settings are independent per page and apply live when the configuration file is saved. Colors must be CSS hex values such as `#abc` or `#aabbcc`.

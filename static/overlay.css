@@ -5,6 +5,7 @@
   --overlay-muted-color: #d4d8de;
   --overlay-accent-color: #e8bd68;
   --overlay-result-color: #ff4b4b;
+  --overlay-background-color: #10141c;
   font-family: var(--overlay-font-family);
 }
 
@@ -41,6 +42,7 @@ body {
   border: 1px solid rgb(255 255 255 / 22%);
   border-radius: 0;
   background: #10141c;
+  background: var(--overlay-background-color);
   box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
   font-weight: 700;
 }
@@ -128,6 +130,11 @@ body {
     115deg,
     rgb(20 25 34 / var(--pre-match-opacity, 0.5)),
     rgb(37 42 51 / var(--pre-match-opacity, 0.5))
+  );
+  background: color-mix(
+    in srgb,
+    var(--overlay-background-color) calc(var(--pre-match-opacity, 0.5) * 100%),
+    transparent
   );
   box-shadow: 0 10px 32px rgb(0 0 0 / 38%);
 }
