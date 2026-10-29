@@ -1,4 +1,4 @@
-basho_id: "202609"
+basho_id: '202609'
 division: 0
 day: 15
 api:
@@ -20,7 +20,7 @@ ocr:
   stable_readings: 2
   minimum_confidence: 0.25
   capture_regions:
-    abema_scoresheet:
+    scoresheet:
       x: 0
       y: 0
       width: 1920
@@ -40,32 +40,32 @@ overlay:
   control:
     font_family: '"Segoe UI", Arial, sans-serif'
     colors:
-      text: "#ffffff"
-      muted: "#d4d8de"
-      accent: "#e8bd68"
-      result: "#ff4b4b"
-      background: "#151923"
+      text: '#ffffff'
+      muted: '#d4d8de'
+      accent: '#e8bd68'
+      result: '#ff4b4b'
+      background: '#151923'
   scoreboard:
     width: 1582
     height: 350
     font_family: '"Segoe UI", Arial, sans-serif'
     colors:
-      text: "#ffffff"
-      muted: "#d4d8de"
-      accent: "#e8bd68"
-      result: "#ff4b4b"
-      background: "#10141c"
+      text: '#ffffff'
+      muted: '#d4d8de'
+      accent: '#e8bd68'
+      result: '#ff4b4b'
+      background: '#10141c'
   prematch:
     width: 1840
     height: 1000
     opacity: 0.95
     font_family: '"Segoe UI", Arial, sans-serif'
     colors:
-      text: "#ffffff"
-      muted: "#d4d8de"
-      accent: "#e8bd68"
-      result: "#ff4b4b"
-      background: "#141922"
+      text: '#ffffff'
+      muted: '#d4d8de'
+      accent: '#e8bd68'
+      result: '#ff4b4b'
+      background: '#141922'
 templates:
   scoreboard: scoreboard_overlay.html
   prematch: prematch_overlay.html

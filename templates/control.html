@@ -44,6 +44,57 @@
     #mode-toggle, #pre-match-pin, #save-duration { flex: 0 0 auto; }
     button:disabled { cursor: wait; opacity: .6; }
     #error { min-height: 1.5em; color: var(--overlay-result-color); }
+    /* OCR crop preview + nudge section */
+    #ocr-automated-section { margin-top: 10px; padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
+    #ocr-automated-section h2 { margin: 0 0 8px; font-size: 15px; color: var(--overlay-accent-color); }
+    .ocr-crops { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+    .ocr-crop-panel { display: flex; flex-direction: column; gap: 4px; align-items: center; flex: 1; min-width: 120px; }
+    .ocr-crop-panel label { font-size: 12px; color: var(--overlay-muted-color); }
+    .ocr-crop-panel img { max-width: 100%; max-height: 80px; border: 1px solid #434a56; border-radius: 4px; background: #10141c; }
+    .ocr-crop-text { font-size: 13px; text-align: center; }
+    .ocr-crop-conf { font-size: 11px; color: var(--overlay-muted-color); }
+    .ocr-nudge-group { margin-top: 10px; }
+    .ocr-nudge-group h3 { margin: 0 0 6px; font-size: 13px; color: var(--overlay-muted-color); }
+    .ocr-nudge-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+    .ocr-nudge-field { display: grid; gap: 3px; font-size: 12px; min-width: 0; }
+    .ocr-nudge-field label { color: var(--overlay-muted-color); }
+    .nudge-row { display: flex; gap: 2px; align-items: center; min-width: 0; }
+    .nudge-row input[type=number] {
+      flex: 1 1 0;
+      min-width: 0;
+      width: 0;
+      height: 28px;
+      padding: 4px 2px;
+      font-size: 13px;
+      text-align: center;
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    .nudge-row input[type=number]::-webkit-inner-spin-button,
+    .nudge-row input[type=number]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .nudge-btn {
+      flex: 0 0 26px;
+      width: 26px;
+      height: 28px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 4px;
+      background: #2e3748;
+      color: var(--overlay-text-color);
+      border: 1px solid #434a56;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .nudge-btn:hover { background: #3a4560; }
+    .ocr-nudge-actions { display: flex; gap: 8px; margin-top: 8px; }
+    #ocr-nudge-status { font-size: 12px; color: var(--overlay-muted-color); margin-top: 4px; }
     @media (max-width: 520px) {
       .control-panel .bout-card { padding: 12px; }
       .control-panel .matchup { gap: 8px; }
@@ -53,6 +104,7 @@
       .pre-match-controls { grid-template-columns: 1fr; }
       .pre-match-actions { justify-content: stretch; }
       .pre-match-help { grid-column: auto; }
+      .ocr-nudge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
 </head>
@@ -112,6 +164,102 @@
     </section>
     <p id="ocr-status" role="status">OCR status: checking…</p>
     <p id="ocr-last-action" role="status">Last OCR action: No stable OCR match has been checked yet.</p>
+    <!-- Feature 7+8: OCR crop preview and nudge controls — only visible in automated+OCR-enabled mode -->
+    <section id="ocr-automated-section" style="display:none" aria-live="polite">
+      <h2>Live OCR Preview</h2>
+      <div class="ocr-crops">
+        <div class="ocr-crop-panel">
+          <label>Left name crop</label>
+          <img id="ocr-left-img" src="" alt="Left name crop" width="250" height="50">
+          <div class="ocr-crop-text" id="ocr-left-text"></div>
+          <div class="ocr-crop-conf" id="ocr-left-conf"></div>
+        </div>
+        <div class="ocr-crop-panel">
+          <label>Right name crop</label>
+          <img id="ocr-right-img" src="" alt="Right name crop" width="250" height="50">
+          <div class="ocr-crop-text" id="ocr-right-text"></div>
+          <div class="ocr-crop-conf" id="ocr-right-conf"></div>
+        </div>
+      </div>
+      <div class="ocr-nudge-group">
+        <h3>Left name box</h3>
+        <div class="ocr-nudge-grid">
+          <div class="ocr-nudge-field">
+            <label for="nudge-left-x">X</label>
+            <div class="nudge-row">
+              <button type="button" class="nudge-btn" data-field="nudge-left-x" data-delta="-1">−</button>
+              <input id="nudge-left-x" type="number" min="0" step="1" value="0" data-dirty="false">
+              <button type="button" class="nudge-btn" data-field="nudge-left-x" data-delta="1">+</button>
+            </div>
+          </div>
+          <div class="ocr-nudge-field">
+            <label for="nudge-left-y">Y</label>
+            <div class="nudge-row">
+              <button type="button" class="nudge-btn" data-field="nudge-left-y" data-delta="-1">−</button>
+              <input id="nudge-left-y" type="number" min="0" step="1" value="0" data-dirty="false">
+              <button type="button" class="nudge-btn" data-field="nudge-left-y" data-delta="1">+</button>
+            </div>
+          </div>
+          <div class="ocr-nudge-field">
+            <label for="nudge-left-w">Width</label>
+            <div class="nudge-row">
+              <button type="button" class="nudge-btn" data-field="nudge-left-w" data-delta="-1">−</button>
+              <input id="nudge-left-w" type="number" min="1" step="1" value="250" data-dirty="false">
+              <button type="button" class="nudge-btn" data-field="nudge-left-w" data-delta="1">+</button>
+            </div>
+          </div>
+          <div class="ocr-nudge-field">
+            <label for="nudge-left-h">Height</label>
+            <div class="nudge-row">
+              <button type="button" class="nudge-btn" data-field="nudge-left-h" data-delta="-1">−</button>
+              <input id="nudge-left-h" type="number" min="1" step="1" value="49" data-dirty="false">
+              <button type="button" class="nudge-btn" data-field="nudge-left-h" data-delta="1">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ocr-nudge-group">
+        <h3>Right name box</h3>
+        <div class="ocr-nudge-grid">
+          <div class="ocr-nudge-field">
+            <label for="nudge-right-x">X</label>
+            <div class="nudge-row">
+              <button type="button" class="nudge-btn" data-field="nudge-right-x" data-delta="-1">−</button>
+              <input id="nudge-right-x" type="number" min="0" step="1" value="0" data-dirty="false">
+              <button type="button" class="nudge-btn" data-field="nudge-right-x" data-delta="1">+</button>
+            </div>
+          </div>
+          <div class="ocr-nudge-field">
+            <label for="nudge-right-y">Y</label>
+            <div class="nudge-row">
+              <button type="button" class="nudge-btn" data-field="nudge-right-y" data-delta="-1">−</button>
+              <input id="nudge-right-y" type="number" min="0" step="1" value="0" data-dirty="false">
+              <button type="button" class="nudge-btn" data-field="nudge-right-y" data-delta="1">+</button>
+            </div>
+          </div>
+          <div class="ocr-nudge-field">
+            <label for="nudge-right-w">Width</label>
+            <div class="nudge-row">
+              <button type="button" class="nudge-btn" data-field="nudge-right-w" data-delta="-1">−</button>
+              <input id="nudge-right-w" type="number" min="1" step="1" value="250" data-dirty="false">
+              <button type="button" class="nudge-btn" data-field="nudge-right-w" data-delta="1">+</button>
+            </div>
+          </div>
+          <div class="ocr-nudge-field">
+            <label for="nudge-right-h">Height</label>
+            <div class="nudge-row">
+              <button type="button" class="nudge-btn" data-field="nudge-right-h" data-delta="-1">−</button>
+              <input id="nudge-right-h" type="number" min="1" step="1" value="49" data-dirty="false">
+              <button type="button" class="nudge-btn" data-field="nudge-right-h" data-delta="1">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ocr-nudge-actions">
+        <button id="save-box-positions" type="button">Save box positions</button>
+      </div>
+      <p id="ocr-nudge-status"></p>
+    </section>
     <section class="pre-match-controls">
       <label class="pre-match-duration" for="pre-match-salaried-seconds">
         Salaried divisions (Makuuchi/Juryo), seconds (0 = off)
@@ -130,6 +278,7 @@
     <nav class="links">
       <a href="/scoreboard" target="_blank">Open scoreboard overlay</a>
       <a href="/prematch" target="_blank">Open pre-match overlay</a>
+      <a href="/calibrate" target="_blank">Open full calibration tool →</a>
     </nav>
     <p id="error" role="alert"></p>
   </main>
@@ -141,6 +290,32 @@
     let unsalariedDurationDirty = false;
     let controlSocket = null;
     let currentBoutKey = null;
+    let ocrEnabled = false;
+
+    // Nudge-field dirty tracking
+    const nudgeFieldIds = [
+      "nudge-left-x", "nudge-left-y", "nudge-left-w", "nudge-left-h",
+      "nudge-right-x", "nudge-right-y", "nudge-right-w", "nudge-right-h"
+    ];
+    nudgeFieldIds.forEach(id => {
+      document.getElementById(id).addEventListener("input", () => {
+        document.getElementById(id).dataset.dirty = "true";
+      });
+    });
+
+    // Nudge buttons (− / + with shift×5)
+    document.querySelectorAll(".nudge-btn").forEach(btn => {
+      btn.addEventListener("click", e => {
+        const fieldId = btn.dataset.field;
+        const delta = parseInt(btn.dataset.delta, 10) * (e.shiftKey ? 5 : 1);
+        const input = document.getElementById(fieldId);
+        const min = input.min !== "" ? Number(input.min) : -Infinity;
+        const newVal = Math.max(min, (Number(input.value) || 0) + delta);
+        input.value = newVal;
+        input.dataset.dirty = "true";
+      });
+    });
+
     function applyOverlayStyle(style) {
       const root = document.documentElement;
       root.style.setProperty("--overlay-font-family", style.font_family);
@@ -213,11 +388,16 @@
           `Head to head: ${state.headToHead.eastWins} - ${state.headToHead.westWins} (${state.headToHead.total} bouts)`;
       }
     }
+    function updateOcrAutomatedSectionVisibility() {
+      const show = ocrEnabled && currentMode === "automated";
+      document.getElementById("ocr-automated-section").style.display = show ? "" : "none";
+    }
     function renderSettings(response) {
       if (response.settings && response.settings.overlay && response.settings.overlay.control) {
         applyOverlayStyle(response.settings.overlay.control);
       }
       currentMode = response.settings.control.mode;
+      ocrEnabled = !!(response.settings.ocr && response.settings.ocr.enabled);
       document.getElementById("mode").textContent =
         currentMode === "manual" ? "Manual" : "Automated";
       document.getElementById("mode-toggle").textContent =
@@ -247,6 +427,30 @@
       if (needsRestart) {
         document.getElementById("error").textContent =
           "Server host or port changed. Restart the app for that change to take effect.";
+      }
+      // Populate nudge fields from settings if not dirty
+      if (response.settings.ocr) {
+        const leftBox = response.settings.ocr.name_boxes && response.settings.ocr.name_boxes.left;
+        const rightBox = response.settings.ocr.name_boxes && response.settings.ocr.name_boxes.right;
+        if (leftBox) {
+          setNudgeIfClean("nudge-left-x", leftBox.x);
+          setNudgeIfClean("nudge-left-y", leftBox.y);
+          setNudgeIfClean("nudge-left-w", leftBox.width);
+          setNudgeIfClean("nudge-left-h", leftBox.height);
+        }
+        if (rightBox) {
+          setNudgeIfClean("nudge-right-x", rightBox.x);
+          setNudgeIfClean("nudge-right-y", rightBox.y);
+          setNudgeIfClean("nudge-right-w", rightBox.width);
+          setNudgeIfClean("nudge-right-h", rightBox.height);
+        }
+      }
+      updateOcrAutomatedSectionVisibility();
+    }
+    function setNudgeIfClean(id, value) {
+      const el = document.getElementById(id);
+      if (el && el.dataset.dirty !== "true" && document.activeElement !== el) {
+        el.value = value;
       }
     }
     function loadSettings() {
@@ -292,6 +496,77 @@
     }
     loadOcrStatus();
     window.setInterval(loadOcrStatus, 2000);
+
+    // Feature 7: crop preview polling
+    function loadCropPreview() {
+      if (!ocrEnabled || currentMode !== "automated") return;
+      fetch("/api/ocr/crop-preview")
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) return;
+          if (data.left) {
+            document.getElementById("ocr-left-img").src = "data:image/png;base64," + data.left;
+          }
+          if (data.right) {
+            document.getElementById("ocr-right-img").src = "data:image/png;base64," + data.right;
+          }
+          document.getElementById("ocr-left-text").textContent = data.leftText || "";
+          document.getElementById("ocr-right-text").textContent = data.rightText || "";
+          document.getElementById("ocr-left-conf").textContent =
+            data.leftConfidence != null ? `${Math.round(data.leftConfidence * 100)}% confidence` : "";
+          document.getElementById("ocr-right-conf").textContent =
+            data.rightConfidence != null ? `${Math.round(data.rightConfidence * 100)}% confidence` : "";
+        })
+        .catch(() => {});
+    }
+    window.setInterval(loadCropPreview, 2000);
+
+    // Feature 8: save box positions
+    document.getElementById("save-box-positions").addEventListener("click", () => {
+      const nudgeStatus = document.getElementById("ocr-nudge-status");
+      nudgeStatus.textContent = "Saving…";
+      const captureBox = { x: 0, y: 0, width: 1920, height: 1080 }; // pass-through current capture
+      // We'll read capture from settings via a fresh fetch, or just send current nudge values
+      // and rely on calibration endpoint to update name_boxes while keeping capture intact.
+      // For simplicity, fetch current settings first to pass the existing capture region.
+      fetch("/api/settings")
+        .then(r => r.json())
+        .then(data => {
+          const ocr = data.settings && data.settings.ocr;
+          const cr = ocr && ocr.capture_regions && (ocr.capture_regions.scoresheet || ocr.capture_regions.abema_scoresheet);
+          const capture = cr || captureBox;
+          const left = {
+            x: Number(document.getElementById("nudge-left-x").value),
+            y: Number(document.getElementById("nudge-left-y").value),
+            width: Number(document.getElementById("nudge-left-w").value),
+            height: Number(document.getElementById("nudge-left-h").value),
+          };
+          const right = {
+            x: Number(document.getElementById("nudge-right-x").value),
+            y: Number(document.getElementById("nudge-right-y").value),
+            width: Number(document.getElementById("nudge-right-w").value),
+            height: Number(document.getElementById("nudge-right-h").value),
+          };
+          return fetch("/api/ocr/calibration", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ capture, left, right }),
+          });
+        })
+        .then(async r => {
+          const payload = await r.json();
+          if (!r.ok) throw new Error(payload.error || "Failed to save");
+          nudgeFieldIds.forEach(id => document.getElementById(id).dataset.dirty = "false");
+          nudgeStatus.style.color = "var(--overlay-accent-color)";
+          nudgeStatus.textContent = "Box positions saved.";
+          setTimeout(() => nudgeStatus.textContent = "", 3000);
+        })
+        .catch(err => {
+          nudgeStatus.style.color = "var(--overlay-result-color)";
+          nudgeStatus.textContent = `Save failed: ${err.message}`;
+        });
+    });
+
     function setBusy(busy) {
       buttons.forEach(button => button.disabled = busy);
     }

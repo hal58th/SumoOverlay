@@ -1,21 +1,21 @@
 ocr:
   capture_regions:
-    abema_scoresheet:
-      x: 803
-      y: 146
-      width: 1000
-      height: 100
+    scoresheet:
+      x: 797
+      y: 120
+      width: 1046
+      height: 175
   name_boxes:
     left:
-      x: 0
-      y: 0
-      width: 400
-      height: 100
+      x: 34
+      y: 30
+      width: 380
+      height: 85
     right:
-      x: 600
-      y: 0
-      width: 400
-      height: 100
-basho_id: "202609"
+      x: 631
+      y: 26
+      width: 375
+      height: 90
+basho_id: '202609'
 division: 0
 day: 1

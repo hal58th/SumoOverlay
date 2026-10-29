@@ -372,7 +372,7 @@ def test_partial_override_config_merges_nested_values(tmp_path):
             "ocr": {
                 "monitor": 2,
                 "capture_regions": {
-                    "abema_scoresheet": {"x": 120},
+                    "scoresheet": {"x": 120},
                 },
             },
             "overlay": {"scoreboard": {"width": 1400}},
@@ -383,8 +383,8 @@ def test_partial_override_config_merges_nested_values(tmp_path):
 
     assert effective["ocr"]["monitor"] == 2
     assert effective["ocr"]["interval_seconds"] == settings["ocr"]["interval_seconds"]
-    assert effective["ocr"]["capture_regions"]["abema_scoresheet"] == {
-        **settings["ocr"]["capture_regions"]["abema_scoresheet"],
+    assert effective["ocr"]["capture_regions"]["scoresheet"] == {
+        **settings["ocr"]["capture_regions"]["scoresheet"],
         "x": 120,
     }
     assert effective["overlay"]["scoreboard"] == {
@@ -585,7 +585,7 @@ def test_ocr_settings_validate_monitor_and_name_box_bounds():
 
 def test_ocr_name_boxes_use_pixels_relative_to_capture_region():
     settings = default_settings()
-    settings["ocr"]["capture_regions"]["abema_scoresheet"] = {
+    settings["ocr"]["capture_regions"]["scoresheet"] = {
         "x": 100,
         "y": 50,
         "width": 800,
@@ -604,7 +604,7 @@ def test_ocr_name_boxes_use_pixels_relative_to_capture_region():
 def test_capture_regions_must_be_nested_under_ocr():
     settings = default_settings()
     settings["capture_regions"] = {
-        "abema_scoresheet": {"x": 0, "y": 0, "width": 1920, "height": 1080}
+        "scoresheet": {"x": 0, "y": 0, "width": 1920, "height": 1080}
     }
 
     with pytest.raises(SettingsError, match="Unknown settings key: capture_regions"):
@@ -913,7 +913,7 @@ def test_external_yaml_edit_hot_reloads_overlay_settings(tmp_path):
         settings["overlay"]["scoreboard"]["colors"]["background"] = "#112233"
         settings["overlay"]["prematch"]["height"] = 900
         settings["overlay"]["control"]["font_family"] = "Arial, sans-serif"
-        settings["ocr"]["capture_regions"]["abema_scoresheet"]["x"] = 120
+        settings["ocr"]["capture_regions"]["scoresheet"]["x"] = 120
         write_config(settings_path, settings)
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
@@ -939,7 +939,7 @@ def test_external_yaml_edit_hot_reloads_overlay_settings(tmp_path):
         )
         assert client.get("/api/pre-match-state").json["settings"]["overlay"]["prematch"]["height"] == 900
         assert client.get("/api/settings").json["settings"]["ocr"]["capture_regions"][
-            "abema_scoresheet"
+            "scoresheet"
         ]["x"] == 120
     finally:
         app.extensions["settings_watcher"].stop()
@@ -1132,3 +1132,175 @@ def test_overlay_background_color_is_bound_in_templates_and_css():
 
     prematch_html = (root / "templates" / "prematch_overlay.html").read_text(encoding="utf-8")
     assert 'root.style.setProperty("--overlay-background-color", style.colors.background);' in prematch_html
+
+
+def test_calibrate_page_renders_template():
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    client = app.test_client()
+    response = client.get("/calibrate")
+    assert response.status_code == 200
+    assert b"OCR Calibration" in response.data
+
+
+def test_ocr_screenshot_endpoint(monkeypatch):
+    import mss
+    import mss.tools
+
+    class FakeScreenshot:
+        size = (10, 10)
+        rgb = b"\x00\x00\x00" * 100
+
+    class FakeMSS:
+        monitors = [
+            {"left": 0, "top": 0, "width": 100, "height": 100},
+            {"left": 0, "top": 0, "width": 10, "height": 10},
+        ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def grab(self, monitor):
+            return FakeScreenshot()
+
+    monkeypatch.setattr(mss, "mss", FakeMSS)
+
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    client = app.test_client()
+    response = client.get("/api/ocr/screenshot")
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+    assert response.data.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_ocr_screenshot_endpoint_invalid_monitor(monkeypatch):
+    import mss
+
+    class FakeMSS:
+        monitors = [{"left": 0, "top": 0, "width": 100, "height": 100}]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr(mss, "mss", FakeMSS)
+
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    client = app.test_client()
+    response = client.get("/api/ocr/screenshot")
+    assert response.status_code == 400
+    assert "unavailable" in response.json["error"]
+
+
+def test_save_ocr_calibration_endpoint(tmp_path):
+    settings_path = tmp_path / "config.yaml"
+    settings = default_settings()
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+
+    try:
+        client = app.test_client()
+        response = client.post(
+            "/api/ocr/calibration",
+            json={
+                "capture": {"x": 10, "y": 20, "width": 800, "height": 200},
+                "left": {"x": 5, "y": 5, "width": 100, "height": 50},
+                "right": {"x": 200, "y": 5, "width": 100, "height": 50},
+            },
+        )
+        assert response.status_code == 200
+        saved_ocr = response.json["settings"]["ocr"]
+        assert saved_ocr["capture_regions"]["scoresheet"]["x"] == 10
+        assert saved_ocr["name_boxes"]["left"]["x"] == 5
+        assert saved_ocr["name_boxes"]["right"]["x"] == 200
+
+        # Without capture (nudge only updates name boxes)
+        response2 = client.post(
+            "/api/ocr/calibration",
+            json={
+                "left": {"x": 15, "y": 10, "width": 120, "height": 60},
+                "right": {"x": 250, "y": 10, "width": 120, "height": 60},
+            },
+        )
+        assert response2.status_code == 200
+        saved_ocr2 = response2.json["settings"]["ocr"]
+        assert saved_ocr2["capture_regions"]["scoresheet"]["x"] == 10
+        assert saved_ocr2["name_boxes"]["left"]["x"] == 15
+        assert saved_ocr2["name_boxes"]["right"]["x"] == 250
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_control_page_nudge_css_bounds():
+    root = Path(__file__).resolve().parents[1]
+    control_html = (root / "templates" / "control.html").read_text(encoding="utf-8")
+    assert "grid-template-columns: repeat(4, minmax(0, 1fr));" in control_html
+    assert ".ocr-nudge-field { display: grid; gap: 3px; font-size: 12px; min-width: 0; }" in control_html
+
+
+def test_ocr_test_endpoint_uses_buffered_screenshot_and_returns_images():
+    import numpy as np
+
+    class FakeReader:
+        def readtext(self, crop, detail=1, paragraph=False):
+            return [([0, 0], "テスト", 0.95)]
+
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    scanner = app.extensions["ocr_scanner"]
+    scanner._reader = FakeReader()
+
+    fake_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+    scanner.set_last_screenshot(fake_frame)
+
+    client = app.test_client()
+    response = client.post(
+        "/api/ocr/test",
+        json={
+            "capture": {"x": 10, "y": 10, "width": 80, "height": 80},
+            "left": {"x": 0, "y": 0, "width": 30, "height": 30},
+            "right": {"x": 40, "y": 0, "width": 30, "height": 30},
+        },
+    )
+    assert response.status_code == 200
+    data = response.json
+    assert data["left"] == "テスト"
+    assert data["right"] == "テスト"
+    assert data["leftConfidence"] == 0.95
+    assert data["rightConfidence"] == 0.95
+    assert data["leftImage"] != ""
+    assert data["rightImage"] != ""
+
+
+def test_legacy_abema_scoresheet_key_is_accepted_and_normalized():
+    settings = default_settings()
+    settings["ocr"]["capture_regions"] = {
+        "abema_scoresheet": {"x": 50, "y": 60, "width": 1920, "height": 1080}
+    }
+    validated = validate_settings(settings)
+    assert "scoresheet" in validated["ocr"]["capture_regions"]
+    assert validated["ocr"]["capture_regions"]["scoresheet"]["x"] == 50

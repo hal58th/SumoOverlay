@@ -25,6 +25,7 @@ class OCRScanner:
         self._candidate: tuple[str, str] | None = None
         self._candidate_count = 0
         self._last_emitted: tuple[str, str] | None = None
+        self._last_screenshot: Any | None = None
         self._status: dict[str, Any] = {
             "state": "stopped",
             "left": "",
@@ -172,6 +173,207 @@ class OCRScanner:
             self._reader = easyocr.Reader(["ja"], gpu=False, verbose=False)
         return self._reader
 
+    def set_last_screenshot(self, frame: Any) -> None:
+        with self._lock:
+            self._last_screenshot = frame
+
+    def get_last_screenshot(self) -> Any | None:
+        with self._lock:
+            return self._last_screenshot
+
+    def read_crops_from_frame(
+        self,
+        frame: Any,
+        capture_region: dict[str, int],
+        name_boxes: dict[str, dict[str, int]],
+        frame_is_full_monitor: bool = True,
+    ) -> tuple[tuple[str, float, bytes], tuple[str, float, bytes]]:
+        """Run OCR on explicit name box coordinates from an existing image frame."""
+        try:
+            import mss.tools
+        except ImportError as error:
+            raise RuntimeError(
+                'Screen-capture packages are missing. Install them with: '
+                r'.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"'
+            ) from error
+
+        if frame_is_full_monitor:
+            cap_x = capture_region["x"]
+            cap_y = capture_region["y"]
+            cap_w = capture_region["width"]
+            cap_h = capture_region["height"]
+            sub_frame = frame[cap_y : cap_y + cap_h, cap_x : cap_x + cap_w]
+        else:
+            sub_frame = frame
+
+        if sub_frame.size == 0:
+            raise RuntimeError("Capture region produced an empty image frame.")
+
+        reader = self._load_reader()
+        detected: list[tuple[str, float, bytes]] = []
+        for side in ("left", "right"):
+            box = name_boxes[side]
+            left_px = box["x"]
+            top_px = box["y"]
+            right_px = left_px + box["width"]
+            bottom_px = top_px + box["height"]
+            crop = sub_frame[top_px:bottom_px, left_px:right_px]
+            if crop.size == 0:
+                raise RuntimeError(
+                    f"OCR {side} name box produced an empty image crop. "
+                    f"Ensure {side} box ({left_px},{top_px} {box['width']}x{box['height']}) "
+                    f"fits inside capture region ({sub_frame.shape[1]}x{sub_frame.shape[0]})."
+                )
+            results = reader.readtext(crop, detail=1, paragraph=False)
+            readings = [
+                (self.normalize_text(text), float(confidence))
+                for _, text, confidence in results
+            ]
+            if not readings:
+                text, conf = "", 0.0
+            else:
+                text, conf = max(readings, key=lambda r: r[1])
+            try:
+                png_bytes = mss.tools.to_png(crop.tobytes(), (crop.shape[1], crop.shape[0]))
+            except Exception:
+                png_bytes = b""
+            detected.append((text, conf, png_bytes or b""))
+
+        return detected[0], detected[1]
+
+    def capture_and_read_with_boxes(
+        self,
+        monitor_number: int,
+        capture_region: dict[str, int],
+        name_boxes: dict[str, dict[str, int]],
+    ) -> tuple[tuple[str, float], tuple[str, float]]:
+        """Capture and OCR using explicit coordinates instead of reading from settings."""
+        try:
+            import mss
+            import numpy as np
+        except ImportError as error:
+            raise RuntimeError(
+                'Screen-capture packages are missing. Install them with: '
+                r'.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"'
+            ) from error
+
+        with mss.mss() as capture:
+            monitors = capture.monitors
+            if monitor_number >= len(monitors):
+                raise RuntimeError(
+                    f"OCR monitor {monitor_number} is unavailable; this computer has "
+                    f"{max(0, len(monitors) - 1)} configured monitor(s)."
+                )
+            monitor = monitors[monitor_number]
+            if (
+                capture_region["x"] + capture_region["width"] > monitor["width"]
+                or capture_region["y"] + capture_region["height"] > monitor["height"]
+            ):
+                raise RuntimeError(
+                    "capture_region must fit inside the selected monitor."
+                )
+            screenshot = capture.grab(
+                {
+                    "left": monitor["left"] + capture_region["x"],
+                    "top": monitor["top"] + capture_region["y"],
+                    "width": capture_region["width"],
+                    "height": capture_region["height"],
+                }
+            )
+            frame = np.frombuffer(screenshot.rgb, dtype=np.uint8).reshape(
+                screenshot.height, screenshot.width, 3
+            )
+
+        left, right = self.read_crops_from_frame(
+            frame, capture_region, name_boxes, frame_is_full_monitor=False
+        )
+        return (left[0], left[1]), (right[0], right[1])
+
+    def capture_crops(
+        self, settings: dict[str, Any]
+    ) -> tuple[
+        tuple[str, float, bytes],
+        tuple[str, float, bytes],
+    ]:
+        """Capture the two name box crops and return (text, confidence, png_bytes) each."""
+        try:
+            import mss
+            import numpy as np
+        except ImportError as error:
+            raise RuntimeError(
+                'Screen-capture packages are missing. Install them with: '
+                r'.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"'
+            ) from error
+
+        try:
+            from PIL import Image
+            import io as _pil_io
+            _has_pil = True
+        except ImportError:
+            _has_pil = False
+
+        ocr_settings = settings["ocr"]
+        capture_region = ocr_settings["capture_regions"].get(
+            "scoresheet"
+        ) or ocr_settings["capture_regions"].get("abema_scoresheet")
+        with mss.mss() as capture:
+            monitors = capture.monitors
+            monitor_number = ocr_settings["monitor"]
+            if monitor_number >= len(monitors):
+                raise RuntimeError(
+                    f"OCR monitor {monitor_number} is unavailable; this computer has "
+                    f"{max(0, len(monitors) - 1)} configured monitor(s)."
+                )
+            monitor = monitors[monitor_number]
+            screenshot = capture.grab(
+                {
+                    "left": monitor["left"] + capture_region["x"],
+                    "top": monitor["top"] + capture_region["y"],
+                    "width": capture_region["width"],
+                    "height": capture_region["height"],
+                }
+            )
+            frame = np.frombuffer(screenshot.rgb, dtype=np.uint8).reshape(
+                screenshot.height, screenshot.width, 3
+            )
+
+        reader = self._load_reader()
+        results_out: list[tuple[str, float, bytes]] = []
+        for side in ("left", "right"):
+            box = ocr_settings["name_boxes"][side]
+            left_px = box["x"]
+            top_px = box["y"]
+            right_px = left_px + box["width"]
+            bottom_px = top_px + box["height"]
+            crop = frame[top_px:bottom_px, left_px:right_px]
+            if crop.size == 0:
+                raise RuntimeError(f"OCR {side} name box produced an empty image crop.")
+
+            ocr_results = reader.readtext(crop, detail=1, paragraph=False)
+            readings = [
+                (self.normalize_text(text), float(confidence))
+                for _, text, confidence in ocr_results
+            ]
+            if not readings:
+                text, conf = "", 0.0
+            else:
+                text, conf = max(readings, key=lambda r: r[1])
+
+            if _has_pil:
+                img = Image.fromarray(crop, mode="RGB")
+                buf = _pil_io.BytesIO()
+                img.save(buf, format="PNG")
+                img_bytes = buf.getvalue()
+            else:
+                img_bytes = b""
+
+            results_out.append((text, conf, img_bytes))
+
+        return (
+            (results_out[0][0], results_out[0][1], results_out[0][2]),
+            (results_out[1][0], results_out[1][1], results_out[1][2]),
+        )
+
     def _capture_and_read(
         self, settings: dict[str, Any]
     ) -> tuple[tuple[str, float], tuple[str, float]]:
@@ -185,7 +387,9 @@ class OCRScanner:
             ) from error
 
         ocr_settings = settings["ocr"]
-        capture_region = ocr_settings["capture_regions"]["abema_scoresheet"]
+        capture_region = ocr_settings["capture_regions"].get(
+            "scoresheet"
+        ) or ocr_settings["capture_regions"].get("abema_scoresheet")
         with mss.mss() as capture:
             monitors = capture.monitors
             monitor_number = ocr_settings["monitor"]
@@ -200,7 +404,7 @@ class OCRScanner:
                 or capture_region["y"] + capture_region["height"] > monitor["height"]
             ):
                 raise RuntimeError(
-                    "ocr.capture_regions.abema_scoresheet must fit inside the selected OCR monitor."
+                    "ocr.capture_regions.scoresheet must fit inside the selected OCR monitor."
                 )
             screenshot = capture.grab(
                 {

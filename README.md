@@ -1,7 +1,7 @@
 # Sumo Broadcast Overlay
 
 This program creates a scoreboard overlay for sumo broadcast, so you can see the English wrestler names, plus a prematch overlay that shows head to head stats. This can be used for streaming, recording, or watching by yourself.
-It uses OCR to recognize wrestler names on the broadcast to determine what match you are on, or you can control it manually. We download a basho's bout lists and head to head stats from [sumo-api.com](https://sumo-api.com) (thank you sumo-api, this project wouldn't be possible without it).
+It uses [OCR](#ocr-bout-detection) to recognize wrestler names on the broadcast to determine what match you are on, or you can control it manually. We download a basho's bout lists and head to head stats from [sumo-api.com](https://sumo-api.com) (thank you sumo-api, this project wouldn't be possible without it).
 
 1. **Scoreboard overlay** — a persistent scoreboard overlay with the current division, wrestler names, their records before this bout, and abbreviated ranks. 
 
@@ -89,18 +89,99 @@ With the app running, open:
 - Control page: <http://127.0.0.1:5000/control>
 - Scoreboard overlay: <http://127.0.0.1:5000/scoreboard>
 - Pre-match overlay: <http://127.0.0.1:5000/prematch>
+- OCR calibration tool: <http://127.0.0.1:5000/calibrate>
 
 Below are diagnostic endpoints for troubleshooting and inspecting the app's state:
+
 - Current bout JSON: <http://127.0.0.1:5000/api/state>
 - Pre-match and H2H JSON: <http://127.0.0.1:5000/api/pre-match-state>
 - Kanji-to-English lookup: <http://127.0.0.1:5000/api/lookup>
 - OCR status: <http://127.0.0.1:5000/api/ocr/status>
 - Effective settings/reload status: <http://127.0.0.1:5000/api/settings>
 
-Use **Previous Bout** and **Next Bout** for replay or manual synchronization. After a bout finishes, choose **East Wins** or **West Wins** to show that result in the Control page and overlays. This temporarily adds one win to the selected wrestler and one loss to the other wrestler's displayed  record.
-Enter a division number from 1 (Makuuchi) to 6 (Jonokuchi) and choose **Go to division** to jump to that division's first scheduled bout. This requires `division: 0` so all six divisions are loaded. Set match control to **Manual** for button-driven selection or **Automated** for OCR selection. The OCR status appears below the mode control.
+On the control page, use **Previous Bout** and **Next Bout** for manual synchronization. After a bout finishes, optionally choose **East Wins** or **West Wins** to show that result in the Control page and overlays. This temporarily adds one win to the selected wrestler and one loss to the other wrestler's displayed  record.
+If in manual mode, enter a division number from 1 (Makuuchi) to 6 (Jonokuchi) and choose **Go to division** to jump to that division's first scheduled bout. This requires `division: 0` so all six divisions are loaded. Set match control to **Manual** for button-driven selection or **Automated** for OCR selection. The OCR status appears below the mode control.
 
 For the pre-match overlay, use the separate **Salaried divisions** and **Unsalaried divisions** duration fields and click **Save duration** to choose how long the pre-match card appears after a bout change. Set either value to `0` to disable timed auto-show for that group. **Show pre-match until I turn it off** pins the card on-screen until you press **Hide pre-match now**; manual display remains available even when timed auto-show is disabled. These settings are saved in `config.yaml`.
+
+## OCR bout detection
+
+OCR is opt-in at installation. To use it, install the optional ocr packages, then choose **Automated** on the Control page. The page reports whether OCR is paused, reading, confirming names, below the confidence threshold, matched to a bout, or reporting an error.
+
+### Install OCR on Windows
+
+Open PowerShell in the project folder and install the optional OCR dependencies into this project's virtual environment:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"
+```
+
+EasyOCR also installs PyTorch, so this step can take several minutes and needs an internet connection. On its first OCR use, EasyOCR downloads its text-detection and Japanese-recognition models; allow those downloads to finish before the broadcast. This project sets PyTorch to two CPU threads and explicitly disables GPU use. The regular app and unit tests do not load the OCR model unless the live scanner is started.
+
+Run `.\.venv\Scripts\python.exe app.py` from PowerShell on the Windows desktop where the sumo broadcast is playing.
+
+### Calibrate OCR
+
+The scanner captures one rectangle of the monitor (`ocr.capture_regions.scoresheet`), then crops the left and right wrestler names from that captured image before running OCR. The app provides two interactive tools to set up and fine-tune these boxes without manual pixel math:
+
+#### 1. Interactive Calibration Tool (`/calibrate`)
+
+Open <http://127.0.0.1:5000/calibrate> in your browser (or click **Open full calibration tool →** at the bottom of the Control page):
+
+1. **Take screenshot**: Freezes a full-screen snapshot of the selected OCR monitor and displays it on the canvas.
+2. **Draw name boxes**:
+   - Choose **Draw Left Name** and click-drag a green box over the left wrestler's ring name.
+   - Choose **Draw Right Name** and click-drag a blue box over the right wrestler's ring name.
+   - Aim for the large Japanese ring name only; avoid the small pronunciation line above or neighboring scoreboard graphics.
+
+3. **Automatic capture envelope**: The purple **Capture Region** box automatically wraps around both drawn name boxes. If you wish to frame the broadcast scoreboard banner manually, select **Draw Capture Region** and drag the purple box.
+4. **Test OCR**: Click **Test OCR** to immediately test EasyOCR against the screenshot frame you are viewing. The result box displays the recognized text, confidence score, and visual thumbnail previews of both cropped names.
+5. **Save to config**: Click **Save to config** to write the new `scoresheet` and relative `name_boxes` coordinates directly to `config.yaml` (or your active override file). The live configuration watcher applies the changes immediately.
+
+#### 2. Live Crop Previews & Nudge Controls (`/control`)
+
+When match control is set to **Automated** and `ocr.enabled` is `true`, the Control page displays a **Live OCR Preview** section:
+
+- **Live Thumbnails**: Auto-polls every 2 seconds, displaying the current image cropped by the scanner along with recognized text and confidence percentage.
+- **Fine-Tuning Nudge Inputs**: Eight numeric controls ($X, Y, 	ext{Width}, 	ext{Height}$ for both Left and Right name boxes) flanked by `−` and `+` buttons.
+  - Clicking `−` or `+` nudges the coordinate by 1 pixel.
+  - **Shift-clicking** `−` or `+` nudges by 5 pixels at a time.
+- **Save Box Positions**: Click **Save box positions** to commit your nudged adjustments directly to `config.yaml`.
+
+#### Manual Configuration
+
+If you prefer editing `config.yaml` manually:
+
+1. Measure the scoreboard rectangle on your monitor: enter it as `ocr.capture_regions.scoresheet` (`x`, `y`, `width`, `height`).
+2. For each name, subtract the capture rectangle's screen `x` and `y` from the name rectangle's screen `x` and `y`. Enter those relative offsets as `ocr.name_boxes.left` and `ocr.name_boxes.right`:
+
+```yaml
+ocr:
+  capture_regions:
+    scoresheet:
+      x: 100
+      y: 50
+      width: 800
+      height: 100
+  name_boxes:
+    left:
+      x: 160
+      y: 20
+      width: 130
+      height: 45
+    right:
+      x: 400
+      y: 20
+      width: 130
+      height: 45
+```
+
+Both name boxes must fit completely inside the capture region.
+Keep each full wrestler name inside its box when possible, but avoid including the neighboring name or scoreboard labels. If the web player moves, resize it, or changes its layout, recalibrate the capture rectangle and name boxes.
+
+OCR waits for the configured number of consecutive reads before acting. Either wrestler's recognized name may be enough: recognized names are resolved through the API's Japanese-name dictionary, then the scanner selects a bout only if that name (or both names together) uniquely identifies one bout in the loaded basho, day, and division schedule. A single name that appears in more than one scheduled bout remains ambiguous and will not trigger a guess. The scanner will not machine-translate unknown names. Use `division: 0` to load every division when the broadcast can move between divisions. The automatic detector can identify the bout already on screen, so it also supports starting an offline replay in the middle of the schedule.
+
+Japanese OCR can confuse similar-looking or uncommon kanji. If the Control page says the recognized names are not in the schedule, inspect the displayed OCR text and recalibrate the name boxes or improve the captured video size/clarity. Do not lower the confidence threshold just to force a match: the app only changes bouts after exact API dictionary resolution and a unique schedule match.
 
 ## OBS Studio
 
@@ -140,8 +221,8 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `ocr.interval_seconds` | Delay between OCR scans. |
 | `ocr.stable_readings` | Number of consecutive matching reads required before selecting a bout. |
 | `ocr.minimum_confidence` | Minimum EasyOCR confidence from `0` through `1` for each name. |
-| `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `ocr.capture_regions.abema_scoreboard`. |
-| `ocr.capture_regions.abema_scoreboard` | Rectangle around the sumo broadcast scoreboard, in pixels relative to the selected monitor. |
+| `ocr.capture_regions.scoresheet` | Rectangle around the sumo broadcast scoreboard, in pixels relative to the selected monitor. |
+| `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `ocr.capture_regions.scoresheet`. |
 
 Each of `overlay.control`, `overlay.scoreboard`, and `overlay.prematch` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and records), `result` (announced bout results and errors), and `background` (background color). For example:
 
@@ -190,7 +271,7 @@ For example, create `config.firefox.yaml` beside `config.yaml` with the capture 
 ```yaml
 ocr:
   capture_regions:
-    abema_scoreboard:
+    scoresheet:
       x: 0
       y: 0
       width: 1500
@@ -208,7 +289,7 @@ ocr:
       height: 40
 ```
 
-The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor`, `ocr.capture_regions.abema_scoreboard`, or `overlay.scoreboard.width`, using their normal `config.yaml` structure.
+The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor`, `ocr.capture_regions.scoresheet`, or `overlay.scoreboard.width`, using their normal `config.yaml` structure.
 
 Start the app with the profile you want:
 
@@ -217,60 +298,6 @@ Start the app with the profile you want:
 ```
 
 For a different layout, make another file such as `config.fullscreen.yaml` and pass that filename instead. Without `--override-config`, the app uses `config.yaml` alone. The main `config.yaml` can still be selected separately with `--config`.
-
-## OCR bout detection
-
-OCR is opt-in at installation, but the sample `config.yaml` has `ocr.enabled` set to `true`. The scanner starts when you run `app.py`; it waits without capturing the screen while control mode is **manual**. To use it, install the optional packages, run the app on the same Windows desktop as the browser playing the sumo broadcast, then choose **Automated** on the Control page. The page reports whether OCR is paused, reading, confirming names, below the confidence threshold, matched to a bout, or reporting an error. A separate **Last OCR action** line keeps the most recent match, no-match, low-confidence, or scan-error detail visible while the live status continues to update, so it can be copied for troubleshooting.
-
-### Install OCR on Windows
-
-Open PowerShell in the project folder and install the optional OCR dependencies into this project's virtual environment:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"
-```
-
-EasyOCR also installs PyTorch, so this step can take several minutes and needs an internet connection. On its first OCR use, EasyOCR downloads its text-detection and Japanese-recognition models; allow those downloads to finish before the broadcast. This project sets PyTorch to two CPU threads and explicitly disables GPU use. The regular app and unit tests do not load the OCR model unless the live scanner is started.
-
-Run `.\.venv\Scripts\python.exe app.py` from PowerShell on the Windows desktop where the sumo broadcast is playing.
-
-### Calibrate OCR when the browser is not full-screen
-
-The scanner captures one rectangle of the monitor, then crops the left and right wrestler names from that captured image before running OCR. The capture rectangle only needs to contain both name boxes; it does not need to include the whole scoreboard. The default example captures a 1920×1080 rectangle at the top-left of monitor 1. Change `ocr.capture_regions.abema_scoreboard` in `config.yaml` to a smaller screen-pixel rectangle containing both names. Its `x` and `y` start at the top-left of the selected monitor (not the whole multi-monitor desktop); `width` and `height` are the rectangle size. The full rectangle must fit on that monitor.
-
-There is no drag-to-select calibration tool in the app yet. For now, measure the boxes from a screenshot and enter their coordinates in `config.yaml`. The name boxes use pixels (not percentages):
-
-1. Take a screenshot showing the sumo broadcast at the same browser size and screen position you plan to use.
-2. In an image editor that shows the cursor position and selection size, measure each wrestler's large, lower name line. Aim for the ring name only; avoid including the smaller pronunciation line above it.
-3. Measure the smallest practical screen-pixel rectangle containing both name boxes. Enter it as `ocr.capture_regions.abema_scoreboard` (`x`, `y`, `width`, `height`). Its `x` and `y` are relative to the top-left corner of the selected monitor.
-4. For each name, subtract the capture rectangle's screen `x` and `y` from the name rectangle's screen `x` and `y`. Use those relative `x` and `y` offsets, plus the measured pixel width and height, in `ocr.name_boxes.left` and `ocr.name_boxes.right`. Both name boxes must fit inside the capture rectangle.
-
-These annotated examples show the capture rectangle and individual name crops. Their coordinates describe the sample images only; measure your own monitor and browser layout:
-
-- `ocr_guide_whole_screenshot.png`: [OCR calibration guide](./ocr_guide_whole_screenshot.png)
-- `ocr_guide_tight_capture.png`: [OCR calibration guide with a tight capture rectangle](./ocr_guide_tight_capture.png)
-
-For example, if the capture rectangle starts at screen `(100, 50)` and a wrestler's lower name line starts at `(260, 70)` with a size of `130 × 45` pixels, the name box is `x: 160, y: 20, width: 130, height: 45`. The subtraction is simply `(260 - 100, 70 - 50)`. Enter it like this:
-
-```yaml
-name_boxes:
-  left:
-    x: 160
-    y: 20
-    width: 130
-    height: 45
-  right:
-    x: 400
-    y: 20
-    width: 130
-    height: 45
-```
-
-`x: 0, y: 0` is the capture rectangle's top-left pixel. The name-box width and height are also pixels. For the same example, if the right wrestler's name starts at `(500, 70)` and measures `130 × 45` pixels, its relative box is `x: 400, y: 20, width: 130, height: 45`. The name boxes must fit inside the capture rectangle. Save `config.yaml`; the running app applies the new coordinates automatically. Keep each full wrestler name inside its box when possible, but avoid including the neighboring name or scoreboard labels. If the web player moves, resize it, or changes its layout, recalibrate the capture rectangle and name boxes.
-
-OCR waits for the configured number of consecutive reads before acting. Either wrestler's recognized name may be enough: recognized names are resolved through the API's Japanese-name dictionary, then the scanner selects a bout only if that name (or both names together) uniquely identifies one bout in the loaded basho, day, and division schedule. A single name that appears in more than one scheduled bout remains ambiguous and will not trigger a guess. The scanner will not machine-translate unknown names. Use `division: 0` to load every division when the broadcast can move between divisions. The automatic detector can identify the bout already on screen, so it also supports starting an offline replay in the middle of the schedule.
-
-Japanese OCR can confuse similar-looking or uncommon kanji. If the Control page says the recognized names are not in the schedule, inspect the displayed OCR text and recalibrate the name boxes or improve the captured video size/clarity. Do not lower the confidence threshold just to force a match: the app only changes bouts after exact API dictionary resolution and a unique schedule match.
 
 ## Custom overlay templates
 
