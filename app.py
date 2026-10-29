@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
+import io
 import logging
 from pathlib import Path
 from threading import RLock
 from typing import Any, Callable
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 from flask_socketio import SocketIO, emit
 from jinja2 import ChoiceLoader, FileSystemLoader
 
@@ -229,6 +231,10 @@ def create_app(
     def control() -> str:
         return render_template("control.html")
 
+    @app.get("/calibrate")
+    def calibrate() -> str:
+        return render_template("calibrate.html")
+
     @app.get("/api/state")
     def get_state() -> Any:
         try:
@@ -268,6 +274,204 @@ def create_app(
         status["mode"] = settings_snapshot["control"]["mode"]
         status["enabled"] = settings_snapshot["ocr"]["enabled"]
         return jsonify(status)
+
+    @app.get("/api/ocr/screenshot")
+    def get_ocr_screenshot() -> Any:
+        """Take a full-monitor screenshot and return it as image/png."""
+        try:
+            import mss
+            import mss.tools
+        except ImportError:
+            return jsonify({
+                "error": "Screen-capture package (mss) is not installed. "
+                         r'Install with: .\.venv\Scripts\python.exe -m pip install -e ".[ocr]"'
+            }), 503
+        try:
+            snap = current_settings()
+            monitor_number = snap["ocr"]["monitor"]
+            with mss.mss() as capture:
+                monitors = capture.monitors
+                if monitor_number >= len(monitors):
+                    return jsonify({
+                        "error": f"Monitor {monitor_number} is unavailable; "
+                                 f"this computer has {max(0, len(monitors) - 1)} monitor(s)."
+                    }), 400
+                monitor = monitors[monitor_number]
+                screenshot = capture.grab(monitor)
+                try:
+                    import numpy as np
+                    frame = np.frombuffer(screenshot.rgb, dtype=np.uint8).reshape(
+                        screenshot.height, screenshot.width, 3
+                    )
+                    ocr_scanner.set_last_screenshot(frame)
+                except Exception as buffer_err:
+                    app.logger.warning("Failed to buffer screenshot frame for calibration: %s", buffer_err)
+                png_bytes = mss.tools.to_png(screenshot.rgb, screenshot.size)
+            return send_file(io.BytesIO(png_bytes), mimetype="image/png")
+        except Exception as error:
+            app.logger.error("OCR screenshot failed: %s", error)
+            return jsonify({"error": str(error)}), 500
+
+    @app.post("/api/ocr/test")
+    def ocr_test() -> Any:
+        """Run a one-off OCR pass with ad-hoc box coordinates."""
+        try:
+            import mss  # noqa: F401 — just check it's available
+            import easyocr  # noqa: F401
+        except ImportError:
+            return jsonify({
+                "error": "OCR packages (mss / easyocr) are not installed. "
+                         r'Install with: .\.venv\Scripts\python.exe -m pip install -e ".[ocr]"'
+            }), 503
+
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "JSON body is required"}), 400
+
+        def _parse_box(key: str) -> dict[str, int] | None:
+            box = payload.get(key)
+            if not isinstance(box, dict):
+                return None
+            try:
+                w = box.get("width") if "width" in box else box.get("w")
+                h = box.get("height") if "height" in box else box.get("h")
+                return {
+                    "x": int(box["x"]),
+                    "y": int(box["y"]),
+                    "width": int(w),
+                    "height": int(h),
+                }
+            except (KeyError, TypeError, ValueError):
+                return None
+
+        capture = _parse_box("capture")
+        left = _parse_box("left")
+        right = _parse_box("right")
+        if capture is None or left is None or right is None:
+            return jsonify({
+                "error": "Body must contain capture, left, and right objects each "
+                         "with x, y, width/w, height/h fields"
+            }), 400
+
+        snap = current_settings()
+        monitor_number = snap["ocr"]["monitor"]
+        last_frame = ocr_scanner.get_last_screenshot()
+        left_img: bytes = b""
+        right_img: bytes = b""
+        try:
+            if last_frame is not None:
+                (left_text, left_conf, left_img), (right_text, right_conf, right_img) = (
+                    ocr_scanner.read_crops_from_frame(
+                        last_frame,
+                        capture,
+                        {"left": left, "right": right},
+                        frame_is_full_monitor=True,
+                    )
+                )
+            else:
+                (left_text, left_conf), (right_text, right_conf) = (
+                    ocr_scanner.capture_and_read_with_boxes(
+                        monitor_number,
+                        capture,
+                        {"left": left, "right": right},
+                    )
+                )
+        except RuntimeError as error:
+            return jsonify({"error": str(error)}), 400
+        except Exception as error:
+            app.logger.error("OCR test failed: %s", error)
+            return jsonify({"error": str(error)}), 500
+
+        return jsonify({
+            "left": left_text,
+            "right": right_text,
+            "leftConfidence": left_conf,
+            "rightConfidence": right_conf,
+            "leftImage": base64.b64encode(left_img).decode() if left_img else "",
+            "rightImage": base64.b64encode(right_img).decode() if right_img else "",
+        })
+
+    @app.get("/api/ocr/crop-preview")
+    def get_ocr_crop_preview() -> Any:
+        """Capture the two name-box crops and return them as base64 PNGs."""
+        try:
+            import mss  # noqa: F401
+            import easyocr  # noqa: F401
+        except ImportError:
+            return jsonify({
+                "error": "OCR packages are not installed. "
+                         r'Install with: .\.venv\Scripts\python.exe -m pip install -e ".[ocr]"'
+            })
+
+        snap = current_settings()
+        try:
+            (left_text, left_conf, left_img), (right_text, right_conf, right_img) = (
+                ocr_scanner.capture_crops(snap)
+            )
+        except Exception as error:
+            app.logger.error("OCR crop preview failed: %s", error)
+            return jsonify({"error": str(error)})
+
+        return jsonify({
+            "left": base64.b64encode(left_img).decode() if left_img else "",
+            "right": base64.b64encode(right_img).decode() if right_img else "",
+            "leftText": left_text,
+            "rightText": right_text,
+            "leftConfidence": left_conf,
+            "rightConfidence": right_conf,
+        })
+
+    @app.post("/api/ocr/calibration")
+    def save_ocr_calibration() -> Any:
+        """Accept capture/left/right box coordinates and save them to config."""
+        if watcher is None:
+            return jsonify({"error": "Live configuration reload is disabled"}), 503
+
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "JSON body is required"}), 400
+
+        def _parse_box(key: str) -> dict[str, int] | None:
+            box = payload.get(key)
+            if not isinstance(box, dict):
+                return None
+            try:
+                return {
+                    "x": int(box["x"]),
+                    "y": int(box["y"]),
+                    "width": int(box["width"]),
+                    "height": int(box["height"]),
+                }
+            except (KeyError, TypeError, ValueError):
+                return None
+
+        capture = _parse_box("capture")
+        left = _parse_box("left")
+        right = _parse_box("right")
+        if left is None or right is None:
+            return jsonify({
+                "error": "Body must contain left and right objects each "
+                         "with x, y, width, height fields"
+            }), 400
+
+        with settings_lock:
+            updated_settings = copy.deepcopy(active_settings)
+        if capture is not None:
+            updated_settings["ocr"]["capture_regions"]["scoresheet"] = capture
+        updated_settings["ocr"]["capture_regions"].pop("abema_scoresheet", None)
+        updated_settings["ocr"]["name_boxes"]["left"] = left
+        updated_settings["ocr"]["name_boxes"]["right"] = right
+
+        try:
+            validated = watcher.write(updated_settings)
+        except SettingsError as error:
+            app.logger.error("OCR calibration save failed: %s", error)
+            return jsonify({"error": str(error)}), 400
+        except Exception as error:
+            app.logger.error("OCR calibration save failed: %s", error)
+            return jsonify({"error": str(error)}), 500
+
+        return jsonify({"settings": validated})
 
     @app.get("/api/lookup")
     def get_lookup() -> Any:

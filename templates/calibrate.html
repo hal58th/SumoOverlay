@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en" class="control-page">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OCR Calibration – Sumo Overlay</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=5) }}">
+  <style>
+    html.control-page { height: auto; min-height: 100%; overflow-y: auto; }
+    body.control-page { display: block; height: auto; min-height: 100%; overflow-x: hidden;
+      overflow-y: auto; background: #151923; background: var(--overlay-background-color);
+      color: var(--overlay-text-color); }
+    .cal-panel { width: min(900px, calc(100% - 24px)); margin: 0 auto; padding: 16px 0 32px; }
+    .cal-panel h1 { margin: 0 0 4px; font-size: 22px; }
+    nav.back-link { margin-bottom: 14px; }
+    nav.back-link a { color: var(--overlay-accent-color); font-size: 13px; }
+    a { color: var(--overlay-accent-color); }
+    input[type=number] { min-width: 0; padding: 6px 8px; border: 1px solid #687181;
+      border-radius: 6px; background: #202632; color: var(--overlay-text-color); font-size: 13px; }
+    button { padding: 8px 14px; border: 0; border-radius: 6px; cursor: pointer;
+      background: #e6b85c; color: #171717; font-size: 13px; font-weight: 700; }
+    button.secondary { background: #2e3748; color: var(--overlay-text-color);
+      border: 1px solid #434a56; }
+    button:disabled { cursor: wait; opacity: .6; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    .toolbar label { font-size: 13px; color: var(--overlay-muted-color); margin-right: 4px; }
+    /* Box type selector */
+    .box-selector { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .box-selector input[type=radio] { display: none; }
+    .box-selector label.box-btn {
+      padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+      font-weight: 700; border: 2px solid transparent;
+      background: #2e3748; color: var(--overlay-muted-color);
+      user-select: none; transition: background .15s;
+    }
+    .box-selector input[type=radio]:checked + label.box-btn { color: #fff; }
+    #box-left:checked + label.box-btn { border-color: #22c55e; background: #1a3d28; }
+    #box-right:checked + label.box-btn { border-color: #3b82f6; background: #1a2c4e; }
+    #box-capture:checked + label.box-btn { border-color: #a855f7; background: #3b1f5e; }
+    /* Canvas/image area */
+    .screenshot-wrapper {
+      position: relative; display: inline-block;
+      border: 1px solid #434a56; border-radius: 6px; overflow: hidden;
+      background: #0e121a; max-width: 100%; cursor: crosshair;
+    }
+    .screenshot-wrapper img { display: block; max-width: 100%; height: auto; }
+    .screenshot-wrapper canvas {
+      position: absolute; top: 0; left: 0; pointer-events: all;
+      cursor: crosshair;
+    }
+    /* Coordinate panels */
+    .coords-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+    .coord-box { padding: 10px; border: 1px solid #434a56; border-radius: 8px; min-width: 0; }
+    .coord-box h3 { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
+    .coord-box .coord-sub { font-size: 11px; color: var(--overlay-muted-color); margin: 0 0 8px; }
+    .coord-box.left-box h3 { color: #22c55e; }
+    .coord-box.right-box h3 { color: #3b82f6; }
+    .coord-box.capture h3 { color: #a855f7; }
+    .coord-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .coord-field { display: grid; gap: 3px; font-size: 12px; color: var(--overlay-muted-color); min-width: 0; }
+    .coord-field input { width: 100%; min-width: 0; }
+    /* Legend */
+    .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .legend-swatch { width: 20px; height: 4px; border-radius: 2px; }
+    /* Actions */
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+    .result-box { margin-top: 14px; padding: 12px; border: 1px solid #434a56; border-radius: 8px;
+      font-size: 13px; background: #161c28; }
+    .result-box h3 { margin: 0 0 8px; font-size: 13px; color: var(--overlay-accent-color); }
+    .result-row { display: flex; gap: 20px; flex-wrap: wrap; }
+    .result-cell { flex: 1; min-width: 140px; }
+    .result-cell strong { color: var(--overlay-text-color); }
+    .result-thumb { margin-top: 6px; }
+    .result-thumb img { display: block; max-height: 60px; max-width: 100%; border: 1px solid #434a56; border-radius: 4px; background: #10141c; }
+    #status-msg { font-size: 13px; }
+    #status-msg.ok { color: var(--overlay-accent-color); }
+    #status-msg.err { color: var(--overlay-result-color); }
+    .screenshot-loading { padding: 20px; color: var(--overlay-muted-color); font-size: 13px; }
+    @media (max-width: 600px) {
+      .coords-grid { grid-template-columns: 1fr; }
+      .box-selector { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body class="control-page">
+  <main class="cal-panel">
+    <nav class="back-link"><a href="/control">← Back to Control</a></nav>
+    <h1>OCR Calibration</h1>
+    <p style="color:var(--overlay-muted-color);font-size:13px;margin:0 0 12px">
+      Draw boxes directly on the screenshot. Drawing the <strong>Left Name</strong> and <strong>Right Name</strong> boxes automatically encloses them in the capture region. Test OCR runs against this exact screenshot.
+    </p>
+
+    <div class="toolbar">
+      <button id="btn-screenshot" type="button">Take screenshot</button>
+      <span class="box-selector">
+        <input type="radio" name="box-type" id="box-left" value="left" checked>
+        <label class="box-btn" for="box-left">Draw Left Name</label>
+        <input type="radio" name="box-type" id="box-right" value="right">
+        <label class="box-btn" for="box-right">Draw Right Name</label>
+        <input type="radio" name="box-type" id="box-capture" value="capture">
+        <label class="box-btn" for="box-capture">Draw Capture Region</label>
+      </span>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:#22c55e"></div> Left name box</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#3b82f6"></div> Right name box</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#a855f7"></div> Capture region</div>
+    </div>
+
+    <div class="screenshot-wrapper" id="screenshot-wrapper">
+      <p class="screenshot-loading" id="screenshot-loading">Loading screenshot…</p>
+      <img id="screenshot-img" src="" alt="Monitor screenshot" style="display:none">
+      <canvas id="cal-canvas" style="display:none"></canvas>
+    </div>
+
+    <div class="coords-grid">
+      <div class="coord-box left-box">
+        <h3>Left Name Box</h3>
+        <p class="coord-sub">Pixels inside capture region</p>
+        <div class="coord-fields">
+          <div class="coord-field"><label>X</label><input id="left-x" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Y</label><input id="left-y" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Width</label><input id="left-w" type="number" min="1" step="1"></div>
+          <div class="coord-field"><label>Height</label><input id="left-h" type="number" min="1" step="1"></div>
+        </div>
+      </div>
+      <div class="coord-box right-box">
+        <h3>Right Name Box</h3>
+        <p class="coord-sub">Pixels inside capture region</p>
+        <div class="coord-fields">
+          <div class="coord-field"><label>X</label><input id="right-x" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Y</label><input id="right-y" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Width</label><input id="right-w" type="number" min="1" step="1"></div>
+          <div class="coord-field"><label>Height</label><input id="right-h" type="number" min="1" step="1"></div>
+        </div>
+      </div>
+      <div class="coord-box capture">
+        <h3>Capture Region</h3>
+        <p class="coord-sub">Monitor pixels (encloses names)</p>
+        <div class="coord-fields">
+          <div class="coord-field"><label>X</label><input id="cap-x" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Y</label><input id="cap-y" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Width</label><input id="cap-w" type="number" min="1" step="1"></div>
+          <div class="coord-field"><label>Height</label><input id="cap-h" type="number" min="1" step="1"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="btn-test" type="button" class="secondary">Test OCR</button>
+      <button id="btn-save" type="button">Save to config</button>
+      <span id="status-msg"></span>
+    </div>
+
+    <div class="result-box" id="result-box" style="display:none">
+      <h3>OCR Test Result (from screenshot)</h3>
+      <div class="result-row">
+        <div class="result-cell">
+          <div>Left: <strong id="res-left"></strong> <span id="res-left-conf" style="color:var(--overlay-muted-color)"></span></div>
+          <div class="result-thumb"><img id="res-left-img" alt="Left crop" style="display:none"></div>
+        </div>
+        <div class="result-cell">
+          <div>Right: <strong id="res-right"></strong> <span id="res-right-conf" style="color:var(--overlay-muted-color)"></span></div>
+          <div class="result-thumb"><img id="res-right-img" alt="Right crop" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ── State ──────────────────────────────────────────────────────────────────
+    const BOX_COLORS = { capture: "#a855f7", left: "#22c55e", right: "#3b82f6" };
+    const BOX_LABELS = { capture: "Capture", left: "Left", right: "Right" };
+
+    // capture: Monitor coordinates { x, y, width, height }
+    // left:    Relative coordinates { x, y, width, height } to capture
+    // right:   Relative coordinates { x, y, width, height } to capture
+    let boxes = {
+      capture: null,
+      left: null,
+      right: null,
+    };
+
+    let previewDrag = null; // While dragging: { type, monBox }
+
+    // Natural (real) size of the screenshot image
+    let imgNaturalWidth = 0;
+    let imgNaturalHeight = 0;
+
+    const img = document.getElementById("screenshot-img");
+    const canvas = document.getElementById("cal-canvas");
+    const ctx = canvas.getContext("2d");
+    const wrapper = document.getElementById("screenshot-wrapper");
+    const loadingEl = document.getElementById("screenshot-loading");
+
+    // ── Coordinate inputs ──────────────────────────────────────────────────────
+    const coordInputs = {
+      capture: { x: "cap-x", y: "cap-y", w: "cap-w", h: "cap-h" },
+      left:    { x: "left-x", y: "left-y", w: "left-w", h: "left-h" },
+      right:   { x: "right-x", y: "right-y", w: "right-w", h: "right-h" },
+    };
+
+    function getInputVal(id) { return Number(document.getElementById(id).value) || 0; }
+    function setInputVal(id, v) { document.getElementById(id).value = Math.round(v); }
+
+    function readBoxFromInputs(type) {
+      const ids = coordInputs[type];
+      return {
+        x: getInputVal(ids.x),
+        y: getInputVal(ids.y),
+        width: getInputVal(ids.w),
+        height: getInputVal(ids.h),
+      };
+    }
+
+    function writeBoxToInputs(type, box) {
+      if (!box) return;
+      const ids = coordInputs[type];
+      setInputVal(ids.x, box.x);
+      setInputVal(ids.y, box.y);
+      setInputVal(ids.w, box.width);
+      setInputVal(ids.h, box.height);
+    }
+
+    // Convert internal relative/monitor box representation to monitor pixels for canvas drawing
+    function getMonitorBox(type) {
+      if (previewDrag && previewDrag.type === type) {
+        return previewDrag.monBox;
+      }
+      if (!boxes[type]) return null;
+      if (type === "capture") return boxes.capture;
+      if (!boxes.capture) return boxes[type];
+      return {
+        x: boxes.capture.x + boxes[type].x,
+        y: boxes.capture.y + boxes[type].y,
+        width: boxes[type].width,
+        height: boxes[type].height,
+      };
+    }
+
+    // When user types into inputs, update state and redraw
+    Object.keys(coordInputs).forEach(type => {
+      Object.values(coordInputs[type]).forEach(id => {
+        document.getElementById(id).addEventListener("input", () => {
+          boxes[type] = readBoxFromInputs(type);
+          redraw();
+        });
+      });
+    });
+
+    // ── Scale helpers ──────────────────────────────────────────────────────────
+    function scaleFactors() {
+      if (!imgNaturalWidth || !imgNaturalHeight || !img.clientWidth || !img.clientHeight) {
+        return { sx: 1, sy: 1 };
+      }
+      return {
+        sx: imgNaturalWidth / img.clientWidth,
+        sy: imgNaturalHeight / img.clientHeight,
+      };
+    }
+
+    // Convert display coords → real monitor pixel coords
+    function displayToReal(dx, dy) {
+      const { sx, sy } = scaleFactors();
+      return { rx: Math.round(dx * sx), ry: Math.round(dy * sy) };
+    }
+
+    // Convert real → display coords
+    function realToDisplay(rx, ry) {
+      const { sx, sy } = scaleFactors();
+      return { dx: rx / sx, dy: ry / sy };
+    }
+
+    function realBoxToDisplay(box) {
+      if (!box) return null;
+      const { dx: x, dy: y } = realToDisplay(box.x, box.y);
+      const { dx: x2, dy: y2 } = realToDisplay(box.x + box.width, box.y + box.height);
+      return { x, y, width: x2 - x, height: y2 - y };
+    }
+
+    // ── Drawing ────────────────────────────────────────────────────────────────
+    function resizeCanvas() {
+      canvas.width = img.clientWidth;
+      canvas.height = img.clientHeight;
+    }
+
+    function drawBox(type, box) {
+      if (!box) return;
+      const db = realBoxToDisplay(box);
+      if (!db) return;
+      const color = BOX_COLORS[type];
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash(type === "capture" ? [8, 4] : []);
+      ctx.strokeRect(db.x + 1, db.y + 1, db.width - 2, db.height - 2);
+      // Label tag
+      ctx.fillStyle = color;
+      ctx.font = "bold 12px sans-serif";
+      ctx.globalAlpha = 0.9;
+      const label = BOX_LABELS[type];
+      const tw = ctx.measureText(label).width;
+      ctx.fillRect(db.x + 1, db.y + 1, tw + 8, 18);
+      ctx.fillStyle = "#fff";
+      ctx.globalAlpha = 1;
+      ctx.fillText(label, db.x + 5, db.y + 14);
+      ctx.restore();
+    }
+
+    function redraw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBox("capture", getMonitorBox("capture"));
+      drawBox("left", getMonitorBox("left"));
+      drawBox("right", getMonitorBox("right"));
+    }
+
+    // ── Drag to draw ──────────────────────────────────────────────────────────
+    let dragging = false;
+    let dragStart = null;
+    let dragType = null;
+
+    function getEventPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    function selectedBoxType() {
+      const checked = document.querySelector('input[name="box-type"]:checked');
+      return checked ? checked.value : "left";
+    }
+
+    function startDrag(e) {
+      dragging = true;
+      dragStart = getEventPos(e);
+      dragType = selectedBoxType();
+    }
+
+    function moveDrag(e) {
+      if (!dragging) return;
+      const pos = getEventPos(e);
+      const x1 = Math.min(dragStart.x, pos.x);
+      const y1 = Math.min(dragStart.y, pos.y);
+      const x2 = Math.max(dragStart.x, pos.x);
+      const y2 = Math.max(dragStart.y, pos.y);
+      const { rx: rx1, ry: ry1 } = displayToReal(x1, y1);
+      const { rx: rx2, ry: ry2 } = displayToReal(x2, y2);
+      const w = Math.max(1, rx2 - rx1);
+      const h = Math.max(1, ry2 - ry1);
+      previewDrag = { type: dragType, monBox: { x: rx1, y: ry1, width: w, height: h } };
+      redraw();
+    }
+
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      if (!previewDrag) return;
+      const drawnMon = previewDrag.monBox;
+      previewDrag = null;
+
+      if (dragType === "capture") {
+        const oldCap = boxes.capture;
+        boxes.capture = drawnMon;
+        if (oldCap && boxes.left) {
+          boxes.left = {
+            x: Math.max(0, oldCap.x + boxes.left.x - drawnMon.x),
+            y: Math.max(0, oldCap.y + boxes.left.y - drawnMon.y),
+            width: Math.min(boxes.left.width, drawnMon.width),
+            height: Math.min(boxes.left.height, drawnMon.height),
+          };
+        }
+        if (oldCap && boxes.right) {
+          boxes.right = {
+            x: Math.max(0, oldCap.x + boxes.right.x - drawnMon.x),
+            y: Math.max(0, oldCap.y + boxes.right.y - drawnMon.y),
+            width: Math.min(boxes.right.width, drawnMon.width),
+            height: Math.min(boxes.right.height, drawnMon.height),
+          };
+        }
+      } else {
+        // dragType is "left" or "right"
+        const curLeftMon = (dragType === "left") ? drawnMon : getMonitorBox("left");
+        const curRightMon = (dragType === "right") ? drawnMon : getMonitorBox("right");
+
+        if (!boxes.capture) {
+          // Auto-envelope to enclose all available name boxes
+          const minX = Math.min(curLeftMon ? curLeftMon.x : Infinity, curRightMon ? curRightMon.x : Infinity);
+          const minY = Math.min(curLeftMon ? curLeftMon.y : Infinity, curRightMon ? curRightMon.y : Infinity);
+          const maxX = Math.max(curLeftMon ? curLeftMon.x + curLeftMon.width : -Infinity, curRightMon ? curRightMon.x + curRightMon.width : -Infinity);
+          const maxY = Math.max(curLeftMon ? curLeftMon.y + curLeftMon.height : -Infinity, curRightMon ? curRightMon.y + curRightMon.height : -Infinity);
+          boxes.capture = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        } else {
+          // Check if drawnMon spills outside current capture
+          const cap = boxes.capture;
+          const spills = (
+            drawnMon.x < cap.x ||
+            drawnMon.y < cap.y ||
+            drawnMon.x + drawnMon.width > cap.x + cap.width ||
+            drawnMon.y + drawnMon.height > cap.y + cap.height
+          );
+          if (spills) {
+            const minX = Math.min(cap.x, drawnMon.x);
+            const minY = Math.min(cap.y, drawnMon.y);
+            const maxX = Math.max(cap.x + cap.width, drawnMon.x + drawnMon.width);
+            const maxY = Math.max(cap.y + cap.height, drawnMon.y + drawnMon.height);
+            boxes.capture = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+            if (curLeftMon && dragType !== "left") {
+              boxes.left = { x: curLeftMon.x - minX, y: curLeftMon.y - minY, width: curLeftMon.width, height: curLeftMon.height };
+            }
+            if (curRightMon && dragType !== "right") {
+              boxes.right = { x: curRightMon.x - minX, y: curRightMon.y - minY, width: curRightMon.width, height: curRightMon.height };
+            }
+          }
+        }
+
+        boxes[dragType] = {
+          x: drawnMon.x - boxes.capture.x,
+          y: drawnMon.y - boxes.capture.y,
+          width: drawnMon.width,
+          height: drawnMon.height,
+        };
+      }
+
+      writeBoxToInputs("capture", boxes.capture);
+      writeBoxToInputs("left", boxes.left);
+      writeBoxToInputs("right", boxes.right);
+      redraw();
+    }
+
+    canvas.addEventListener("mousedown", e => {
+      if (e.button !== 0) return;
+      startDrag(e);
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", moveDrag);
+    window.addEventListener("mouseup", endDrag);
+
+    canvas.addEventListener("touchstart", e => {
+      startDrag(e);
+      e.preventDefault();
+    }, { passive: false });
+    canvas.addEventListener("touchmove", e => {
+      moveDrag(e);
+      e.preventDefault();
+    }, { passive: false });
+    canvas.addEventListener("touchend", endDrag);
+
+    // ── Screenshot loading ─────────────────────────────────────────────────────
+    function takeScreenshot() {
+      loadingEl.textContent = "Taking screenshot…";
+      loadingEl.style.display = "";
+      img.style.display = "none";
+      canvas.style.display = "none";
+      setStatus("", "");
+      fetch("/api/ocr/screenshot")
+        .then(async r => {
+          if (!r.ok) {
+            const j = await r.json().catch(() => ({}));
+            throw new Error(j.error || "Screenshot failed");
+          }
+          return r.blob();
+        })
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          img.onload = () => {
+            imgNaturalWidth = img.naturalWidth;
+            imgNaturalHeight = img.naturalHeight;
+            resizeCanvas();
+            img.style.display = "block";
+            canvas.style.display = "block";
+            loadingEl.style.display = "none";
+            redraw();
+          };
+          img.src = url;
+        })
+        .catch(err => {
+          loadingEl.textContent = `Screenshot error: ${err.message}`;
+        });
+    }
+
+    const resizeObs = new ResizeObserver(() => {
+      if (img.naturalWidth) {
+        resizeCanvas();
+        redraw();
+      }
+    });
+    resizeObs.observe(img);
+
+    // ── Pre-populate from current settings ────────────────────────────────────
+    function loadCurrentSettings() {
+      fetch("/api/settings")
+        .then(r => r.json())
+        .then(data => {
+          const ocr = data.settings && data.settings.ocr;
+          if (!ocr) return;
+          const cr = ocr.capture_regions && (ocr.capture_regions.scoresheet || ocr.capture_regions.abema_scoresheet);
+          if (cr) { boxes.capture = cr; writeBoxToInputs("capture", cr); }
+          const lb = ocr.name_boxes && ocr.name_boxes.left;
+          if (lb) { boxes.left = lb; writeBoxToInputs("left", lb); }
+          const rb = ocr.name_boxes && ocr.name_boxes.right;
+          if (rb) { boxes.right = rb; writeBoxToInputs("right", rb); }
+          redraw();
+        })
+        .catch(() => {});
+    }
+
+    // ── Status helper ──────────────────────────────────────────────────────────
+    function setStatus(msg, type) {
+      const el = document.getElementById("status-msg");
+      el.textContent = msg;
+      el.className = type === "ok" ? "ok" : type === "err" ? "err" : "";
+    }
+
+    // ── Test OCR ──────────────────────────────────────────────────────────────
+    document.getElementById("btn-test").addEventListener("click", () => {
+      const cap = readBoxFromInputs("capture");
+      const left = readBoxFromInputs("left");
+      const right = readBoxFromInputs("right");
+      setStatus("Running OCR on screenshot…", "");
+      document.getElementById("result-box").style.display = "none";
+      fetch("/api/ocr/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          capture: { x: cap.x, y: cap.y, w: cap.width, h: cap.height },
+          left:    { x: left.x, y: left.y, w: left.width, h: left.height },
+          right:   { x: right.x, y: right.y, w: right.width, h: right.height },
+        }),
+      })
+        .then(async r => {
+          const payload = await r.json();
+          if (!r.ok) throw new Error(payload.error || "OCR test failed");
+          return payload;
+        })
+        .then(payload => {
+          document.getElementById("res-left").textContent = payload.left || "(empty)";
+          document.getElementById("res-right").textContent = payload.right || "(empty)";
+          document.getElementById("res-left-conf").textContent =
+            payload.leftConfidence != null ? ` (${Math.round(payload.leftConfidence * 100)}%)` : "";
+          document.getElementById("res-right-conf").textContent =
+            payload.rightConfidence != null ? ` (${Math.round(payload.rightConfidence * 100)}%)` : "";
+
+          const leftImgEl = document.getElementById("res-left-img");
+          if (payload.leftImage) {
+            leftImgEl.src = "data:image/png;base64," + payload.leftImage;
+            leftImgEl.style.display = "block";
+          } else {
+            leftImgEl.style.display = "none";
+          }
+
+          const rightImgEl = document.getElementById("res-right-img");
+          if (payload.rightImage) {
+            rightImgEl.src = "data:image/png;base64," + payload.rightImage;
+            rightImgEl.style.display = "block";
+          } else {
+            rightImgEl.style.display = "none";
+          }
+
+          document.getElementById("result-box").style.display = "";
+          setStatus("OCR test complete.", "ok");
+        })
+        .catch(err => setStatus(`OCR test failed: ${err.message}`, "err"));
+    });
+
+    // ── Save to config ─────────────────────────────────────────────────────────
+    document.getElementById("btn-save").addEventListener("click", () => {
+      const cap   = readBoxFromInputs("capture");
+      const left  = readBoxFromInputs("left");
+      const right = readBoxFromInputs("right");
+      setStatus("Saving…", "");
+      fetch("/api/ocr/calibration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          capture: { x: cap.x, y: cap.y, width: cap.width, height: cap.height },
+          left:    { x: left.x, y: left.y, width: left.width, height: left.height },
+          right:   { x: right.x, y: right.y, width: right.width, height: right.height },
+        }),
+      })
+        .then(async r => {
+          const payload = await r.json();
+          if (!r.ok) throw new Error(payload.error || "Save failed");
+          setStatus("Saved to config successfully.", "ok");
+          setTimeout(() => setStatus("", ""), 4000);
+        })
+        .catch(err => setStatus(`Save failed: ${err.message}`, "err"));
+    });
+
+    document.getElementById("btn-screenshot").addEventListener("click", takeScreenshot);
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    loadCurrentSettings();
+    takeScreenshot();
+  </script>
+</body>
+</html>
