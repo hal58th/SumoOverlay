@@ -496,7 +496,7 @@
         .then(data => {
           const ocr = data.settings && data.settings.ocr;
           if (!ocr) return;
-          const cr = ocr.capture_regions && (ocr.capture_regions.scoresheet || ocr.capture_regions.abema_scoresheet);
+          const cr = ocr.capture_regions && ocr.capture_regions.scoresheet;
           if (cr) { boxes.capture = cr; writeBoxToInputs("capture", cr); }
           const lb = ocr.name_boxes && ocr.name_boxes.left;
           if (lb) { boxes.left = lb; writeBoxToInputs("left", lb); }

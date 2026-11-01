@@ -443,6 +443,9 @@
         currentMode === "automated"
           ? "OCR can select the bout when either wrestler's name is recognized clearly enough."
           : "Use Previous/Next to select bouts manually.";
+      if (currentMode === "manual") {
+        document.getElementById("ocr-last-action").textContent = "";
+      }
       const salariedDurationInput = document.getElementById("pre-match-salaried-seconds");
       const unsalariedDurationInput = document.getElementById("pre-match-unsalaried-seconds");
       if (!salariedDurationDirty && document.activeElement !== salariedDurationInput) {
@@ -533,7 +536,9 @@
             status.textContent = `OCR status: ${payload.state}.`;
           }
           document.getElementById("ocr-last-action").textContent =
-            `Last OCR action: ${payload.lastAction || "No stable OCR match has been checked yet."}`;
+            currentMode === "automated" && payload.mode === "automated"
+              ? `Last OCR action: ${payload.lastAction || "No stable OCR match has been checked yet."}`
+              : "";
         })
         .catch(error => document.getElementById("ocr-status").textContent = error.message);
     }
@@ -576,7 +581,7 @@
         .then(r => r.json())
         .then(data => {
           const ocr = data.settings && data.settings.ocr;
-          const cr = ocr && ocr.capture_regions && (ocr.capture_regions.scoresheet || ocr.capture_regions.abema_scoresheet);
+          const cr = ocr && ocr.capture_regions && ocr.capture_regions.scoresheet;
           const capture = cr || captureBox;
           const left = {
             x: Number(document.getElementById("nudge-left-x").value),
@@ -769,6 +774,9 @@
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error || "Unable to change control mode");
           currentMode = payload.settings.mode;
+          if (currentMode === "manual") {
+            document.getElementById("ocr-last-action").textContent = "";
+          }
           return fetch("/api/settings");
         })
         .then(response => {

@@ -6,6 +6,7 @@ api:
   timeout_seconds: 15
 server:
   host: 127.0.0.1
+  allow_lan_access: false
   port: 5000
   watch_interval_seconds: 1
 control:

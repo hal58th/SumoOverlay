@@ -313,9 +313,7 @@ class OCRScanner:
             _has_pil = False
 
         ocr_settings = settings["ocr"]
-        capture_region = ocr_settings["capture_regions"].get(
-            "scoresheet"
-        ) or ocr_settings["capture_regions"].get("abema_scoresheet")
+        capture_region = ocr_settings["capture_regions"]["scoresheet"]
         with mss.mss() as capture:
             monitors = capture.monitors
             monitor_number = ocr_settings["monitor"]
@@ -387,9 +385,7 @@ class OCRScanner:
             ) from error
 
         ocr_settings = settings["ocr"]
-        capture_region = ocr_settings["capture_regions"].get(
-            "scoresheet"
-        ) or ocr_settings["capture_regions"].get("abema_scoresheet")
+        capture_region = ocr_settings["capture_regions"]["scoresheet"]
         with mss.mss() as capture:
             monitors = capture.monitors
             monitor_number = ocr_settings["monitor"]
