@@ -1,0 +1,78 @@
+name: Build and publish Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify tag is on main
+        shell: pwsh
+        run: |
+          git fetch origin main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch origin/main."
+          }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "The release tag must point to a commit on origin/main."
+          }
+
+      - name: Create build environment
+        shell: pwsh
+        run: |
+          python -m venv .venv-build
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not create the build environment."
+          }
+          .\.venv-build\Scripts\python.exe -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not upgrade pip."
+          }
+          .\.venv-build\Scripts\python.exe -m pip install -e ".[build,ocr,test]"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not install build and test dependencies."
+          }
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          .\.venv-build\Scripts\python.exe -m pytest
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tests failed; release was not published."
+          }
+
+      - name: Build both Windows releases
+        shell: pwsh
+        run: |
+          .\packaging\build-releases.ps1 -Variant both
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release builds failed."
+          }
+
+      - name: Create GitHub Release and upload ZIPs
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" `
+            ".\dist\SumoOverlay.zip" `
+            ".\dist\SumoOverlay-NoOCR.zip" `
+            --title "$env:GITHUB_REF_NAME" `
+            --generate-notes

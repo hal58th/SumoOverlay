@@ -75,6 +75,38 @@ To use another Python 3.11 build environment, pass its Python executable:
 The script recreates the selected release folder and ZIP. Keep your own
 customizations outside those generated folders before rebuilding.
 
+## Publish a GitHub Release
+
+The workflow in `.github/workflows/release.yml` builds and publishes the two
+ZIP files whenever you push a version tag matching `v*`. It checks that the
+tag points to a commit on `main`, runs the test suite, builds both Windows
+variants, creates a published GitHub Release with generated notes, and attaches
+`SumoOverlay.zip` and `SumoOverlay-NoOCR.zip`. You do not need to create the
+release manually or add a personal access token.
+
+First push the commit you want to release to `main`. Then, from the project
+folder, create and push a new tag (replace `v1.0.0` with the next version):
+
+```powershell
+git switch main
+git pull --ff-only origin main
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+In the repository on GitHub, open **Actions** to watch the build. When it
+finishes, open **Releases** to find the published release and its two ZIP
+downloads. A failed test or build prevents the release from being created.
+Use a new version tag for each release.
+
+GitHub Actions is free for standard runners in public repositories. Private
+repositories receive a plan-dependent monthly allowance; usage beyond it can
+be billed. See [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+for current allowances. GitHub Release assets are separate from Actions
+artifacts: each release file must be under 2 GiB, and GitHub currently has no
+total release-asset size or bandwidth limit. See
+[About releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases#storage-and-bandwidth-quotas).
+
 ## Try and distribute
 
 Test each release from its extracted folder, not from the project checkout.
