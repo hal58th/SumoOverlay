@@ -260,6 +260,10 @@ def test_pages_and_kanji_lookup_are_available():
     assert "fitNameToWidth" not in scoreboard_overlay.text
     assert "state.settings.overlay.scoreboard.width}px" in scoreboard_overlay.text
     assert "state.settings.overlay.scoreboard.height}px" in scoreboard_overlay.text
+    assert 'style.font_sizes.text}px' in scoreboard_overlay.text
+    assert '"--scoreboard-division-font-size"' in scoreboard_overlay.text
+    assert '"--overlay-current-score-font-size"' in scoreboard_overlay.text
+    assert '"--overlay-current-score-color"' in scoreboard_overlay.text
     assert 'wins.classList.toggle("announced-result", announcedWinner === side);' in scoreboard_overlay.text
     assert 'state.announcedWinner' in scoreboard_overlay.text
     main_styles = client.get("/static/overlay.css").text.split(
@@ -267,10 +271,12 @@ def test_pages_and_kanji_lookup_are_available():
     )[0]
     assert "width: 1582px;" not in main_styles
     assert "height: 174px;" not in main_styles
-    assert "font-size: 90px;" in main_styles
+    assert "font-size: var(--overlay-text-font-size);" in main_styles
     assert "line-height: 1.25;" in main_styles
-    assert "font-size: 72px;" in main_styles
-    assert "font-size: 56px;" in main_styles
+    assert "font-size: var(--overlay-muted-font-size);" in main_styles
+    assert "font-size: var(--scoreboard-versus-font-size);" in main_styles
+    assert 'style.font_sizes.text}px' in client.get("/prematch").text
+    assert 'style.font_sizes.current_score}px' in client.get("/prematch").text
     main_strip_styles = main_styles.split(".main-strip {", maxsplit=1)[1].split(
         "}", maxsplit=1
     )[0]
@@ -294,6 +300,18 @@ def test_pages_and_kanji_lookup_are_available():
     assert "rgb(37 42 51 / var(--pre-match-opacity, 0.5))" in all_styles
     control = client.get("/control")
     assert control.status_code == 200
+    assert "style.font_sizes.current_score" in control.text
+    assert "--overlay-current-score-font-size" in control.text
+    assert (
+        ".control-panel .record { font-size: var(--overlay-current-score-font-size); }"
+        in control.text
+    )
+    assert "style.font_sizes.text}px" in control.text
+    assert "style.font_sizes.muted}px" in control.text
+    assert "style.font_sizes.accent}px" in control.text
+    assert "style.font_sizes.result}px" in control.text
+    assert "font-size: var(--overlay-accent-font-size);" in control.text
+    assert "font-size: var(--overlay-result-font-size);" in control.text
     assert 'id="bouts-until-next-stage"' in control.text
     assert 'class="rank-record"' in control.text
     assert '`${state.boutsUntilNextStage} ${boutWord} until ${target}`' in control.text
@@ -713,6 +731,76 @@ def test_overlay_dimensions_are_positive_integers_and_reject_position_settings()
         validate_settings(settings)
 
 
+def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
+    settings = default_settings()
+    assert settings["overlay"]["control"]["font_sizes"] == {
+        "text": 28,
+        "muted": 36,
+        "accent": 36,
+        "current_score": 16,
+        "result": 16,
+    }
+    assert settings["overlay"]["scoreboard"]["width"] == 791
+    assert settings["overlay"]["scoreboard"]["height"] == 175
+    assert settings["overlay"]["scoreboard"]["font_sizes"] == {
+        "text": 45,
+        "muted": 36,
+        "accent": 36,
+        "current_score": 36,
+        "result": 40,
+    }
+    assert settings["overlay"]["prematch"]["font_sizes"] == {
+        "text": 88,
+        "muted": 36,
+        "accent": 54,
+        "current_score": 54,
+        "result": 60,
+    }
+
+    settings["overlay"]["scoreboard"]["font_sizes"]["text"] = 48.5
+    settings["overlay"]["scoreboard"]["font_sizes"]["current_score"] = 32
+    settings["overlay"]["scoreboard"]["colors"]["current_score"] = "#123456"
+    settings["overlay"]["control"]["font_sizes"]["current_score"] = 20
+    settings["overlay"]["control"]["font_sizes"]["text"] = 24
+    settings["overlay"]["control"]["font_sizes"]["muted"] = 20
+    settings["overlay"]["control"]["font_sizes"]["accent"] = 30
+    settings["overlay"]["control"]["font_sizes"]["result"] = 14
+    settings["overlay"]["control"]["colors"]["current_score"] = "#654321"
+    settings["overlay"]["prematch"]["font_sizes"]["muted"] = 32
+    settings["overlay"]["prematch"]["font_sizes"]["current_score"] = 42
+    settings["overlay"]["prematch"]["colors"]["current_score"] = "#abcdef"
+    validated = validate_settings(settings)
+    assert validated["overlay"]["scoreboard"]["font_sizes"]["text"] == 48.5
+    assert validated["overlay"]["scoreboard"]["font_sizes"]["current_score"] == 32
+    assert validated["overlay"]["scoreboard"]["colors"]["current_score"] == "#123456"
+    assert validated["overlay"]["control"]["font_sizes"]["current_score"] == 20
+    assert validated["overlay"]["control"]["font_sizes"]["text"] == 24
+    assert validated["overlay"]["control"]["font_sizes"]["muted"] == 20
+    assert validated["overlay"]["control"]["font_sizes"]["accent"] == 30
+    assert validated["overlay"]["control"]["font_sizes"]["result"] == 14
+    assert validated["overlay"]["control"]["colors"]["current_score"] == "#654321"
+    assert validated["overlay"]["prematch"]["font_sizes"]["muted"] == 32
+    assert validated["overlay"]["prematch"]["font_sizes"]["current_score"] == 42
+    assert validated["overlay"]["prematch"]["colors"]["current_score"] == "#abcdef"
+
+
+@pytest.mark.parametrize(
+    ("font_sizes", "error"),
+    [
+        ("invalid", "font_sizes must be an object"),
+        ({"unknown": 24}, "Unknown overlay.scoreboard.font_sizes setting"),
+        ({"text": 0}, "overlay.scoreboard.font_sizes.text"),
+        ({"text": True}, "overlay.scoreboard.font_sizes.text"),
+    ],
+)
+def test_overlay_font_sizes_reject_invalid_values(font_sizes, error):
+    settings = default_settings()
+    settings["overlay"]["scoreboard"]["font_sizes"] = font_sizes
+
+    with pytest.raises(SettingsError, match=error):
+        validate_settings(settings)
+
+
 @pytest.mark.parametrize("opacity", [-0.1, 1.1, True, "0.5"])
 def test_pre_match_opacity_rejects_values_outside_unit_interval(opacity):
     settings = default_settings()
@@ -734,6 +822,7 @@ def test_overlay_font_and_colors_are_independent_and_validated():
     settings = default_settings()
     settings["overlay"]["control"]["font_family"] = '"Arial", sans-serif'
     settings["overlay"]["control"]["colors"]["text"] = "#123456"
+    settings["overlay"]["control"]["colors"]["current_score"] = "#fedcba"
     settings["overlay"]["control"]["colors"]["background"] = "#234567"
     settings["overlay"]["prematch"]["colors"]["accent"] = "#abc"
     settings["overlay"]["prematch"]["colors"]["background"] = "#345678"
@@ -744,6 +833,7 @@ def test_overlay_font_and_colors_are_independent_and_validated():
 
     assert validated["overlay"]["control"]["font_family"] == '"Arial", sans-serif'
     assert validated["overlay"]["control"]["colors"]["text"] == "#123456"
+    assert validated["overlay"]["control"]["colors"]["current_score"] == "#fedcba"
     assert validated["overlay"]["control"]["colors"]["background"] == "#234567"
     assert validated["overlay"]["prematch"]["colors"]["accent"] == "#abc"
     assert validated["overlay"]["prematch"]["colors"]["background"] == "#345678"

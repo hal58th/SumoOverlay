@@ -4,6 +4,7 @@
   --overlay-text-color: #fff;
   --overlay-muted-color: #d4d8de;
   --overlay-accent-color: #e8bd68;
+  --overlay-current-score-color: #e8bd68;
   --overlay-result-color: #ff4b4b;
   --overlay-background-color: #10141c;
   font-family: var(--overlay-font-family);
@@ -49,7 +50,7 @@ body {
 
 .main-division {
   color: var(--overlay-accent-color);
-  font-size: 42px;
+  font-size: var(--scoreboard-division-font-size);
   letter-spacing: .06em;
   text-transform: uppercase;
 }
@@ -80,7 +81,7 @@ body {
 .main-name {
   overflow: hidden;
   max-width: 100%;
-  font-size: 90px;
+  font-size: var(--overlay-text-font-size);
   line-height: 1.25;
   text-align: center;
   text-overflow: ellipsis;
@@ -88,14 +89,14 @@ body {
 }
 
 .main-record {
-  color: var(--overlay-accent-color);
+  color: var(--overlay-current-score-color);
   font-variant-numeric: tabular-nums;
-  font-size: 72px;
+  font-size: var(--overlay-current-score-font-size);
   font-weight: 400;
 }
 
 .main-record strong {
-  color: var(--overlay-accent-color);
+  color: var(--overlay-current-score-color);
   font-size: 1.12em;
   font-weight: 900 !important;
   text-shadow: .35px 0 currentColor, -.35px 0 currentColor;
@@ -104,16 +105,17 @@ body {
 .main-record .announced-result,
 .record .announced-result {
   color: var(--overlay-result-color);
+  font-size: var(--overlay-result-font-size);
 }
 
 .main-rank {
   color: var(--overlay-muted-color);
-  font-size: 72px;
+  font-size: var(--overlay-muted-font-size);
 }
 
 .main-versus {
   color: var(--overlay-muted-color);
-  font-size: 56px;
+  font-size: var(--scoreboard-versus-font-size);
   letter-spacing: .08em;
 }
 
@@ -148,7 +150,7 @@ body {
   justify-content: space-between;
   align-items: flex-start;
   color: var(--overlay-accent-color);
-  font-size: 36px;
+  font-size: var(--prematch-meta-font-size);
   font-weight: 800;
   letter-spacing: .14em;
 }
@@ -162,7 +164,7 @@ body {
 
 #bouts-until-next-stage {
   color: var(--overlay-muted-color);
-  font-size: .78em;
+  font-size: var(--prematch-next-stage-font-size);
   letter-spacing: .04em;
 }
 
@@ -185,7 +187,7 @@ body {
 
 .wrestler-name {
   overflow: hidden;
-  font-size: 88px;
+  font-size: var(--overlay-text-font-size);
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -193,7 +195,7 @@ body {
 
 .rank {
   color: var(--overlay-muted-color);
-  font-size: 36px;
+  font-size: var(--overlay-muted-font-size);
   font-weight: 700;
 }
 
@@ -212,7 +214,7 @@ body {
 .wrestler-profile {
   margin-top: 6px;
   color: var(--overlay-muted-color);
-  font-size: 26px;
+  font-size: var(--prematch-profile-font-size);
   font-weight: 500;
   line-height: 1.35;
 }
@@ -227,14 +229,14 @@ body {
 }
 
 .record {
-  color: var(--overlay-accent-color);
-  font-size: 54px;
+  color: var(--overlay-current-score-color);
+  font-size: var(--overlay-current-score-font-size);
   font-weight: 400;
   line-height: 1;
 }
 
 .record strong {
-  color: var(--overlay-accent-color);
+  color: var(--overlay-current-score-color);
   font-size: inherit;
   line-height: inherit;
   font-weight: 900 !important;
@@ -244,7 +246,7 @@ body {
 .versus {
   align-self: center;
   color: var(--overlay-muted-color);
-  font-size: 28px;
+  font-size: var(--prematch-versus-font-size);
   font-weight: 900;
   letter-spacing: .1em;
 }
@@ -257,7 +259,7 @@ body {
 }
 
 .head-to-head-score {
-  font-size: 46px;
+  font-size: var(--prematch-head-to-head-font-size);
 }
 
 .head-to-head-history {
@@ -275,7 +277,7 @@ body {
   place-items: center;
   border-radius: 50%;
   color: var(--overlay-text-color);
-  font-size: 28px;
+  font-size: var(--prematch-history-font-size);
   line-height: 1;
 }
 
@@ -290,6 +292,6 @@ body {
 .overlay-error {
   margin-top: 8px;
   color: var(--overlay-result-color);
-  font-size: 13px;
+  font-size: var(--prematch-error-font-size);
   text-align: center;
 }

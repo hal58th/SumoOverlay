@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Pre-Match Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=7) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=9) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -58,8 +58,45 @@
         root.style.setProperty("--overlay-text-color", style.colors.text);
         root.style.setProperty("--overlay-muted-color", style.colors.muted);
         root.style.setProperty("--overlay-accent-color", style.colors.accent);
+        root.style.setProperty("--overlay-current-score-color", style.colors.current_score);
         root.style.setProperty("--overlay-result-color", style.colors.result);
         root.style.setProperty("--overlay-background-color", style.colors.background);
+        root.style.setProperty("--overlay-text-font-size", `${style.font_sizes.text}px`);
+        root.style.setProperty("--overlay-muted-font-size", `${style.font_sizes.muted}px`);
+        root.style.setProperty("--overlay-accent-font-size", `${style.font_sizes.accent}px`);
+        root.style.setProperty(
+          "--overlay-current-score-font-size",
+          `${style.font_sizes.current_score}px`
+        );
+        root.style.setProperty("--overlay-result-font-size", `${style.font_sizes.result}px`);
+        root.style.setProperty(
+          "--prematch-meta-font-size",
+          `${style.font_sizes.accent * (36 / 54)}px`
+        );
+        root.style.setProperty(
+          "--prematch-profile-font-size",
+          `${style.font_sizes.muted * (26 / 36)}px`
+        );
+        root.style.setProperty(
+          "--prematch-next-stage-font-size",
+          `${style.font_sizes.muted * 0.78}px`
+        );
+        root.style.setProperty(
+          "--prematch-versus-font-size",
+          `${style.font_sizes.muted * (28 / 36)}px`
+        );
+        root.style.setProperty(
+          "--prematch-head-to-head-font-size",
+          `${style.font_sizes.text * (46 / 88)}px`
+        );
+        root.style.setProperty(
+          "--prematch-history-font-size",
+          `${style.font_sizes.text * (28 / 88)}px`
+        );
+        root.style.setProperty(
+          "--prematch-error-font-size",
+          `${style.font_sizes.result * (13 / 60)}px`
+        );
         preMatchOverlay.style.width = `${width}px`;
         preMatchOverlay.style.height = `${height}px`;
         preMatchOverlay.style.setProperty("--pre-match-opacity", String(opacity));

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Overlay Controls</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=5) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=7) }}">
   <style>
     html.control-page { height: auto; min-height: 100%; overflow-y: auto; }
     body.control-page { display: block; height: auto; min-height: 100%; overflow-x: hidden;
@@ -12,13 +12,32 @@
     .control-panel { width: min(620px, calc(100% - 24px)); margin: 0 auto; padding: 16px 0 24px; }
     .control-panel h1 { margin: 0 0 12px; font-size: 24px; }
     .control-panel .bout-card { position: static; width: 100%; padding: 14px; transform: none; }
-    .control-panel .wrestler-name { font-size: clamp(16px, 3vw, 28px); }
+    .control-panel .bout-meta { font-size: var(--overlay-accent-font-size); }
+    .control-panel .wrestler-name {
+      font-size: clamp(
+        min(16px, var(--overlay-text-font-size)),
+        min(3vw, var(--overlay-text-font-size)),
+        var(--overlay-text-font-size)
+      );
+    }
     .control-panel .matchup { gap: 12px; margin-top: 12px; }
     .control-panel .rank-record { gap: 8px; margin-top: 5px; }
-    .control-panel .rank { font-size: 12px; }
-    .control-panel .record { font-size: 16px; }
-    .control-panel .head-to-head { margin-top: 12px; font-size: 16px; }
-    #winner-status { margin: 8px 0 0; color: var(--overlay-muted-color); font-size: 12px; text-align: center; }
+    .control-panel .rank { font-size: calc(var(--overlay-muted-font-size) * .333333); }
+    .control-panel .record { font-size: var(--overlay-current-score-font-size); }
+    .control-panel .versus { font-size: calc(var(--overlay-muted-font-size) * .777778); }
+    .control-panel #bouts-until-next-stage {
+      font-size: calc(var(--overlay-muted-font-size) * .78);
+    }
+    .control-panel .head-to-head {
+      margin-top: 12px;
+      font-size: calc(var(--overlay-text-font-size) * .571429);
+    }
+    #winner-status {
+      margin: 8px 0 0;
+      color: var(--overlay-muted-color);
+      font-size: calc(var(--overlay-muted-font-size) * .333333);
+      text-align: center;
+    }
     #ocr-last-action { overflow-wrap: anywhere; }
     .winner-buttons button:first-child { background: #258b43; color: #fff; }
     .winner-buttons button:last-child { background: #7139ad; color: #fff; }
@@ -48,7 +67,11 @@
       background: #e6b85c; color: #171717; font-size: 13px; font-weight: 700; }
     #mode-toggle, #pre-match-pin, #save-duration { flex: 0 0 auto; }
     button:disabled { cursor: wait; opacity: .6; }
-    #error { min-height: 1.5em; color: var(--overlay-result-color); }
+    #error {
+      min-height: 1.5em;
+      color: var(--overlay-result-color);
+      font-size: var(--overlay-result-font-size);
+    }
     /* OCR crop preview + nudge section */
     #ocr-automated-section { margin-top: 10px; padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
     #ocr-automated-section h2 { margin: 0 0 8px; font-size: 15px; color: var(--overlay-accent-color); }
@@ -350,7 +373,28 @@
       root.style.setProperty("--overlay-text-color", style.colors.text);
       root.style.setProperty("--overlay-muted-color", style.colors.muted);
       root.style.setProperty("--overlay-accent-color", style.colors.accent);
+      root.style.setProperty("--overlay-current-score-color", style.colors.current_score);
+      root.style.setProperty(
+        "--overlay-text-font-size",
+        `${style.font_sizes.text}px`
+      );
+      root.style.setProperty(
+        "--overlay-muted-font-size",
+        `${style.font_sizes.muted}px`
+      );
+      root.style.setProperty(
+        "--overlay-accent-font-size",
+        `${style.font_sizes.accent}px`
+      );
+      root.style.setProperty(
+        "--overlay-current-score-font-size",
+        `${style.font_sizes.current_score}px`
+      );
       root.style.setProperty("--overlay-result-color", style.colors.result);
+      root.style.setProperty(
+        "--overlay-result-font-size",
+        `${style.font_sizes.result}px`
+      );
       root.style.setProperty("--overlay-background-color", style.colors.background);
     }
 

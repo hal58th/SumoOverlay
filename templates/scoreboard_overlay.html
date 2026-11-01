@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Main Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=9) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=11) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -37,8 +37,25 @@
       root.style.setProperty("--overlay-text-color", style.colors.text);
       root.style.setProperty("--overlay-muted-color", style.colors.muted);
       root.style.setProperty("--overlay-accent-color", style.colors.accent);
+      root.style.setProperty("--overlay-current-score-color", style.colors.current_score);
       root.style.setProperty("--overlay-result-color", style.colors.result);
       root.style.setProperty("--overlay-background-color", style.colors.background);
+      root.style.setProperty("--overlay-text-font-size", `${style.font_sizes.text}px`);
+      root.style.setProperty("--overlay-muted-font-size", `${style.font_sizes.muted}px`);
+      root.style.setProperty("--overlay-accent-font-size", `${style.font_sizes.accent}px`);
+      root.style.setProperty(
+        "--overlay-current-score-font-size",
+        `${style.font_sizes.current_score}px`
+      );
+      root.style.setProperty("--overlay-result-font-size", `${style.font_sizes.result}px`);
+      root.style.setProperty(
+        "--scoreboard-division-font-size",
+        `${style.font_sizes.accent * (42 / 72)}px`
+      );
+      root.style.setProperty(
+        "--scoreboard-versus-font-size",
+        `${style.font_sizes.muted * (56 / 72)}px`
+      );
     }
 
     function abbreviatedRank(rank) {
