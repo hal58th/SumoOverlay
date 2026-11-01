@@ -2,7 +2,7 @@
 
 This folder contains a repeatable Windows build for two standalone releases:
 
-- **SumoOverlay-OCR** includes OCR and starts in automated mode.
+- **SumoOverlay** includes OCR and starts in automated mode.
 - **SumoOverlay-NoOCR** excludes the OCR libraries and starts in manual mode.
 
 Both releases are PyInstaller one-folder applications. Recipients do not need
@@ -63,7 +63,7 @@ By default this builds both releases. You can build just one:
 The script uses `.venv-build\Scripts\python.exe`, checks required dependencies,
 builds clean one-folder applications, and creates ZIP archives:
 
-- `dist\SumoOverlay-OCR\` and `dist\SumoOverlay-OCR.zip`
+- `dist\SumoOverlay\` and `dist\SumoOverlay.zip`
 - `dist\SumoOverlay-NoOCR\` and `dist\SumoOverlay-NoOCR.zip`
 
 To use another Python 3.11 build environment, pass its Python executable:
@@ -78,7 +78,7 @@ customizations outside those generated folders before rebuilding.
 ## Try and distribute
 
 Test each release from its extracted folder, not from the project checkout.
-Run `SumoOverlay-OCR.exe` or `SumoOverlay-NoOCR.exe` and keep its console window
+Run `SumoOverlay.exe` or `SumoOverlay-NoOCR.exe` and keep its console window
 open while the overlays are in use. The server address and port come from the
 included `config.yaml`. Open `http://127.0.0.1:5000/control` in a browser. Use
 **Ctrl+C** in the console window to stop the server.

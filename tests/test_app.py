@@ -1,6 +1,7 @@
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -578,6 +579,56 @@ def test_division_setting_accepts_only_numeric_division_codes():
     settings["division"] = 7
     with pytest.raises(SettingsError, match="division must"):
         validate_settings(settings)
+
+
+def test_lan_access_is_disabled_by_default_and_requires_a_boolean():
+    settings = default_settings()
+    assert settings["server"]["allow_lan_access"] is False
+
+    settings["server"]["allow_lan_access"] = True
+    assert validate_settings(settings)["server"]["allow_lan_access"] is True
+
+    settings["server"]["allow_lan_access"] = "true"
+    with pytest.raises(SettingsError, match="server.allow_lan_access"):
+        validate_settings(settings)
+
+
+@pytest.mark.parametrize(
+    ("allow_lan_access", "expected_host"),
+    [(False, "127.0.0.1"), (True, "0.0.0.0")],
+)
+def test_main_uses_lan_bind_host_only_when_enabled(
+    monkeypatch, allow_lan_access, expected_host
+):
+    run_arguments = {}
+
+    class FakeWatcher:
+        def snapshot(self):
+            return {
+                "server": {
+                    "host": "127.0.0.1",
+                    "allow_lan_access": allow_lan_access,
+                    "port": 5000,
+                }
+            }
+
+    class FakeSocketIO:
+        def run(self, app, **kwargs):
+            run_arguments.update(kwargs)
+
+    fake_app = SimpleNamespace(
+        extensions={
+            "settings_watcher": FakeWatcher(),
+            "socketio": FakeSocketIO(),
+        }
+    )
+    monkeypatch.setattr(app_module, "create_app", lambda **kwargs: fake_app)
+    monkeypatch.setattr(app_module.sys, "argv", ["app.py"])
+
+    app_module.main()
+
+    assert run_arguments["host"] == expected_host
+    assert run_arguments["port"] == 5000
 
 
 def test_ocr_settings_validate_monitor_and_name_box_bounds():
@@ -1404,11 +1455,10 @@ def test_ocr_test_endpoint_uses_buffered_screenshot_and_returns_images():
     assert data["rightImage"] != ""
 
 
-def test_legacy_abema_scoresheet_key_is_accepted_and_normalized():
+def test_unknown_ocr_capture_region_is_rejected():
     settings = default_settings()
     settings["ocr"]["capture_regions"] = {
-        "abema_scoresheet": {"x": 50, "y": 60, "width": 1920, "height": 1080}
+        "unused_region": {"x": 50, "y": 60, "width": 1920, "height": 1080}
     }
-    validated = validate_settings(settings)
-    assert "scoresheet" in validated["ocr"]["capture_regions"]
-    assert validated["ocr"]["capture_regions"]["scoresheet"]["x"] == 50
+    with pytest.raises(SettingsError, match="Unknown OCR capture region"):
+        validate_settings(settings)

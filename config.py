@@ -43,6 +43,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "host": "127.0.0.1",
         "port": 5000,
         "watch_interval_seconds": 1,
+        "allow_lan_access": False,
     },
     "control": {
         "mode": "manual",
@@ -211,6 +212,8 @@ def validate_settings(raw: Any) -> dict[str, Any]:
     server = {**default_settings()["server"], **server}
     if not isinstance(server["host"], str) or not server["host"]:
         raise SettingsError("server.host must be a non-empty string")
+    if not isinstance(server["allow_lan_access"], bool):
+        raise SettingsError("server.allow_lan_access must be true or false")
     port = server["port"]
     if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
         raise SettingsError("server.port must be an integer from 1 through 65535")
@@ -249,11 +252,15 @@ def validate_settings(raw: Any) -> dict[str, Any]:
     capture_regions = ocr.get("capture_regions")
     if not isinstance(capture_regions, dict):
         raise SettingsError("ocr.capture_regions must be a YAML mapping")
-    raw_scoresheet = capture_regions.get("scoresheet")
-    if raw_scoresheet is None:
-        raw_scoresheet = capture_regions.get("abema_scoresheet")
-    if raw_scoresheet is None:
-        raise SettingsError("ocr.capture_regions.scoresheet is required")
+    unknown_capture_region_keys = set(capture_regions) - {"scoresheet"}
+    if unknown_capture_region_keys:
+        raise SettingsError(
+            "Unknown OCR capture region: "
+            f"{sorted(unknown_capture_region_keys)[0]}"
+        )
+    raw_scoresheet = capture_regions.get("scoresheet")
+    if raw_scoresheet is None:
+        raise SettingsError("ocr.capture_regions.scoresheet is required")
     capture_region = _validate_bounds(
         raw_scoresheet, "ocr.capture_regions.scoresheet"
     )

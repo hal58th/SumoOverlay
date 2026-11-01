@@ -77,7 +77,7 @@ function Build-Release {
     }
 
     Copy-Item -LiteralPath "LICENSE", "config.vlc.yaml",
-        "ocr_guide_tight_capture.png", "ocr_guide_whole_scoresheet.png" `
+        "ocr_guide_tight_capture.png" `
         -Destination $ReleaseDirectory
     Copy-Item -LiteralPath "custom_templates" -Destination $ReleaseDirectory -Recurse
 
@@ -116,7 +116,7 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw "OCR dependencies are missing. Install the OCR build requirements from packaging\README.md."
         }
-        Build-Release -Name "SumoOverlay-OCR" -EntryPoint "packaging\entry_ocr.py" -IncludeOcr $true
+        Build-Release -Name "SumoOverlay" -EntryPoint "packaging\entry_ocr.py" -IncludeOcr $true
     }
 
     if ($Variant -in @("both", "no-ocr")) {

@@ -503,7 +503,6 @@ def create_app(
             updated_settings = copy.deepcopy(active_settings)
         if capture is not None:
             updated_settings["ocr"]["capture_regions"]["scoresheet"] = capture
-        updated_settings["ocr"]["capture_regions"].pop("abema_scoresheet", None)
         updated_settings["ocr"]["name_boxes"]["left"] = left
         updated_settings["ocr"]["name_boxes"]["right"] = right
 
@@ -754,7 +753,11 @@ def main(enable_ocr: bool = True) -> None:
     socketio: SocketIO = app.extensions["socketio"]
     socketio.run(
         app,
-        host=settings["server"]["host"],
+        host=(
+            "0.0.0.0"
+            if settings["server"]["allow_lan_access"]
+            else settings["server"]["host"]
+        ),
         port=settings["server"]["port"],
         allow_unsafe_werkzeug=True,
     )

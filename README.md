@@ -99,6 +99,17 @@ Below are diagnostic endpoints for troubleshooting and inspecting the app's stat
 - OCR status: <http://127.0.0.1:5000/api/ocr/status>
 - Effective settings/reload status: <http://127.0.0.1:5000/api/settings>
 
+By default, the server is available only on the computer running SumoOverlay.
+To use OCR on the computer displaying the sumo stream while OBS runs on another
+computer, set `server.allow_lan_access` to `true` in `config.yaml` and restart
+SumoOverlay. The server will listen on the network interfaces; use the
+SumoOverlay computer's LAN IP address in the other computer's OBS Browser
+Source, for example `http://192.168.1.25:5000/scoreboard`. Use the same address
+for `/prematch` or `/control` as needed. Allow the configured port through the
+host computer's firewall if prompted. This exposes the app, including its
+control page and API, to devices on the LAN, so enable it only on a trusted
+network and do not forward the port to the internet.
+
 ## Building standalone Windows releases
 
 To package distributable OCR and manual-only versions that run without a Python
@@ -106,8 +117,8 @@ installation, follow [packaging/README.md](packaging/README.md).
 
 ## Use a packaged Windows release
 
-If you received a `SumoOverlay-OCR.zip` or `SumoOverlay-NoOCR.zip`, extract the
-entire ZIP to a folder, then run `SumoOverlay-OCR.exe` or
+If you received a `SumoOverlay.zip` or `SumoOverlay-NoOCR.zip`, extract the
+entire ZIP to a folder, then run `SumoOverlay.exe` or
 `SumoOverlay-NoOCR.exe` from that folder. No Python installation is needed.
 Keep the console window open while using the app, and open
 <http://127.0.0.1:5000/control> in your browser. Press **Ctrl+C** in the
@@ -225,7 +236,8 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `day` | Tournament day, from `1` through `15`. |
 | `api.base_url` | sumo-api.com API root. |
 | `api.timeout_seconds` | Maximum wait for an API request. |
-| `server.host`, `server.port` | Local web-server address and port. Keep the host set to `127.0.0.1` unless you know why it needs to change. |
+| `server.host`, `server.port` | Web-server address and port. Keep `server.host` set to `127.0.0.1` unless you need a custom bind address; the default is local-only. |
+| `server.allow_lan_access` | `false` by default. Set to `true` to listen on all network interfaces so another computer on your LAN can access the overlays and control page. Restart the app after changing this setting; see [Control page and addresses](#control-page-and-addresses) for security and connection details. |
 | `server.watch_interval_seconds` | How often, in seconds, the app checks `config.yaml` for edits. |
 | `control.mode` | `"manual"` or `"automated"`. Manual mode uses the Control page buttons. Automated mode lets OCR select a uniquely identified bout when either one or both names meet the confidence threshold for the configured number of consecutive reads. |
 | `control.pre_match_salaried_seconds` | How long, in seconds, the pre-match overlay appears for Makuuchi and Juryo bouts. `0` disables timed auto-show for these salaried divisions. |
@@ -280,7 +292,7 @@ Each overlay's configured width and height define its complete fixed-size image 
 
 `division: 0` loads all divisions by requesting each of the six supported divisions separately; the API does not provide a working all-divisions endpoint. Bouts are combined in broadcast order. Values 1 through 6 select one division; number 1 is the top division (Makuuchi) and number 6 is Jonokuchi. Use these numeric codes in `config.yaml`.
 
-When you save a valid YAML file, the app applies changes within the configured watch interval. A change to the basho, division, or day reloads its bout data and selects the first bout. Changes to the OCR monitor, capture rectangle, name boxes, interval, and confidence are used on the next scan. Invalid YAML/settings or unavailable API data leave the last working settings active; the Control page reports a reload error. Fix the file and save again. Changing `server.host` or `server.port` requires restarting the app because the listening socket cannot be rebound while running.
+When you save a valid YAML file, the app applies changes within the configured watch interval. A change to the basho, division, or day reloads its bout data and selects the first bout. Changes to the OCR monitor, capture rectangle, name boxes, interval, and confidence are used on the next scan. Invalid YAML/settings or unavailable API data leave the last working settings active; the Control page reports a reload error. Fix the file and save again. Changing `server.host`, `server.allow_lan_access`, or `server.port` requires restarting the app because the listening socket cannot be rebound while running.
 
 ## Per-window configuration overrides
 
