@@ -13,7 +13,7 @@ control:
   mode: automated
   pre_match_salaried_seconds: 30
   pre_match_unsalaried_seconds: 20
-  pre_match_pinned: false
+  pre_match_pinned: true
 ocr:
   enabled: true
   monitor: 1
@@ -40,31 +40,52 @@ ocr:
 overlay:
   control:
     font_family: '"Segoe UI", Arial, sans-serif'
+    font_sizes:
+      text: 28
+      muted: 36
+      accent: 36
+      current_score: 16
+      result: 16
     colors:
       text: '#ffffff'
       muted: '#d4d8de'
       accent: '#e8bd68'
+      current_score: '#e8bd68'
       result: '#ff4b4b'
       background: '#151923'
   scoreboard:
-    width: 1582
-    height: 350
+    width: 791
+    height: 175
     font_family: '"Segoe UI", Arial, sans-serif'
+    font_sizes:
+      text: 45
+      muted: 36
+      accent: 46
+      current_score: 36
+      result: 40
     colors:
       text: '#ffffff'
       muted: '#d4d8de'
       accent: '#e8bd68'
+      current_score: '#e8bd68'
       result: '#ff4b4b'
       background: '#10141c'
   prematch:
-    width: 1840
-    height: 1000
+    width: 1656
+    height: 800
     opacity: 0.95
     font_family: '"Segoe UI", Arial, sans-serif'
+    font_sizes:
+      text: 88
+      muted: 36
+      accent: 54
+      current_score: 38
+      result: 60
     colors:
       text: '#ffffff'
       muted: '#d4d8de'
       accent: '#e8bd68'
+      current_score: '#e8bd68'
       result: '#ff4b4b'
       background: '#141922'
 templates:

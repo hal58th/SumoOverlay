@@ -245,6 +245,8 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `control.pre_match_pinned` | `true` or `false`. When true, keeps the pre-match overlay visible until you hide it from the Control page. |
 | `overlay.scoreboard.width`, `overlay.scoreboard.height` | Fixed pixel width and height for the main overlay and its OBS Browser Source. |
 | `overlay.prematch.width`, `overlay.prematch.height` | Fixed pixel width and height for the pre-match overlay and its OBS Browser Source. |
+| `overlay.control.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on the Control page. |
+| `overlay.scoreboard.font_sizes`, `overlay.prematch.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on each overlay. |
 | `overlay.prematch.opacity` | Background opacity of the pre-match card, from `0` (transparent) to `1` (opaque). The default is `0.5`. Text opacity is unchanged. |
 | `overlay.control`, `overlay.scoreboard`, `overlay.prematch` | Independent font and background settings for the Control page, pre-match overlay, and scoreboard overlay. Each accepts `font_family` and `colors` as described below. |
 | `templates.scoreboard`, `templates.prematch` | HTML filenames for the overlays. The app searches `custom_templates` first, then the built-in `templates` folder. |
@@ -256,37 +258,58 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `ocr.capture_regions.scoresheet` | Rectangle around the sumo broadcast scoreboard, in pixels relative to the selected monitor. |
 | `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `ocr.capture_regions.scoresheet`. |
 
-Each of `overlay.control`, `overlay.scoreboard`, and `overlay.prematch` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and records), `result` (announced bout results and errors), and `background` (background color). For example:
+Each of `overlay.control`, `overlay.scoreboard`, and `overlay.prematch` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and bout metadata), `current_score` (wrestlers' current records), `result` (announced bout results and errors), and `background` (background color). All three pages accept `font_sizes` in pixels for their text groups. On the Control page, smaller labels retain their proportions to the main `text` and `muted` sizes. `accent` and `current_score` have independent sizes and colors; smaller labels retain their proportions relative to the main text in that color group. For example:
 
 ```yaml
 overlay:
   control:
     font_family: "Arial, sans-serif"
+    font_sizes:
+      text: 28
+      muted: 36
+      accent: 36
+      current_score: 16
+      result: 16
     colors:
       text: "#ffffff"
       muted: "#c0c0c0"
       accent: "#ffd700"
+      current_score: "#e8bd68"
       result: "#ff4b4b"
       background: "#151923"
   scoreboard:
     font_family: '"Segoe UI", Arial, sans-serif'
+    font_sizes:
+      text: 45
+      muted: 36
+      accent: 36
+      current_score: 36
+      result: 40
     colors:
       text: "#ffffff"
       muted: "#d4d8de"
       accent: "#e8bd68"
+      current_score: "#e8bd68"
       result: "#ff4b4b"
       background: "#10141c"
   prematch:
     font_family: '"Georgia", serif'
+    font_sizes:
+      text: 88
+      muted: 36
+      accent: 54
+      current_score: 54
+      result: 60
     colors:
       text: "#ffffff"
       muted: "#d4d8de"
       accent: "#e8bd68"
+      current_score: "#e8bd68"
       result: "#ff4b4b"
       background: "#141922"
 ```
 
-These sections can be added alongside the other `overlay` settings in `config.yaml`. You can omit individual style settings to use their defaults. Font settings are independent per page and apply live when the configuration file is saved. Colors must be CSS hex values such as `#abc` or `#aabbcc`.
+These sections can be added alongside the other `overlay` settings in `config.yaml`. You can omit individual style settings to use their defaults. Font settings are independent per page and apply live when the configuration file is saved. The default scoreboard is 791 by 175 pixels, with its text sized to fit. Colors must be CSS hex values such as `#abc` or `#aabbcc`.
 
 Each overlay's configured width and height define its complete fixed-size image in CSS pixels. There is no canvas scaling or internal positioning; place each Browser Source where you want it in OBS. Set `overlay.prematch.opacity` from `0` to `1` to adjust only the card background transparency; the text stays fully opaque. Capture-region coordinates refer to the selected desktop monitor, not the OBS overlay. OCR name-box coordinates are pixel offsets inside the capture region. If the sumo broadcast moves its scoreboard, update the capture rectangle and/or name-box coordinates to match.
 

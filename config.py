@@ -26,13 +26,34 @@ ALL_DIVISIONS = 0
 DEFAULT_OVERLAY_STYLE = {
     "font_family": '"Segoe UI", Arial, sans-serif',
     "colors": {
-        "text": "#ffffff",
-        "muted": "#d4d8de",
-        "accent": "#e8bd68",
-        "result": "#ff4b4b",
+        "text": "#ffffff",
+        "muted": "#d4d8de",
+        "accent": "#e8bd68",
+        "result": "#ff4b4b",
         "background": "#10141c",
     },
 }
+DEFAULT_SCOREBOARD_FONT_SIZES = {
+    "text": 45,
+    "muted": 36,
+    "accent": 36,
+    "current_score": 36,
+    "result": 40,
+}
+DEFAULT_PREMATCH_FONT_SIZES = {
+    "text": 88,
+    "muted": 36,
+    "accent": 54,
+    "current_score": 54,
+    "result": 60,
+}
+DEFAULT_CONTROL_FONT_SIZES = {
+    "text": 28,
+    "muted": 36,
+    "accent": 36,
+    "current_score": 16,
+    "result": 16,
+}
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "basho_id": "202505",
@@ -75,26 +96,32 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
             "colors": {
                 **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
-                "background": "#151923",
-            },
+                "current_score": "#e8bd68",
+                "background": "#151923",
+            },
+            "font_sizes": copy.deepcopy(DEFAULT_CONTROL_FONT_SIZES),
         },
         "scoreboard": {
-            "width": 1582,
-            "height": 174,
-            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
-            "colors": {
-                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
-                "background": "#10141c",
+            "width": 791,
+            "height": 175,
+            "font_sizes": copy.deepcopy(DEFAULT_SCOREBOARD_FONT_SIZES),
+            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+            "colors": {
+                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
+                "current_score": "#e8bd68",
+                "background": "#10141c",
             },
         },
         "prematch": {
             "width": 1840,
             "height": 1000,
             "opacity": 0.5,
-            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
-            "colors": {
-                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
-                "background": "#141922",
+            "font_sizes": copy.deepcopy(DEFAULT_PREMATCH_FONT_SIZES),
+            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+            "colors": {
+                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
+                "current_score": "#e8bd68",
+                "background": "#141922",
             },
         },
     },
@@ -125,7 +152,12 @@ def _positive_number(value: Any, label: str, *, allow_zero: bool = False) -> int
     return value
 
 
-def _validate_overlay_style(section: dict[str, Any], label: str) -> dict[str, Any]:
+def _validate_overlay_style(
+    section: dict[str, Any],
+    label: str,
+    *,
+    extra_colors: dict[str, str] | None = None,
+) -> dict[str, Any]:
     font_family = section.get("font_family")
     if (
         not isinstance(font_family, str)
@@ -140,7 +172,10 @@ def _validate_overlay_style(section: dict[str, Any], label: str) -> dict[str, An
     colors = section.get("colors")
     if not isinstance(colors, dict):
         raise SettingsError(f"{label}.colors must be an object")
-    default_colors = DEFAULT_OVERLAY_STYLE["colors"]
+    default_colors = {
+        **DEFAULT_OVERLAY_STYLE["colors"],
+        **(extra_colors or {}),
+    }
     unknown_colors = set(colors) - set(default_colors)
     if unknown_colors:
         raise SettingsError(f"Unknown {label}.colors setting: {sorted(unknown_colors)[0]}")
@@ -153,9 +188,25 @@ def _validate_overlay_style(section: dict[str, Any], label: str) -> dict[str, An
     section["font_family"] = font_family
     section["colors"] = colors
     return section
-
-
-def _validate_bounds(bounds: Any, label: str) -> dict[str, int]:
+
+
+def _validate_overlay_font_sizes(
+    font_sizes: Any, defaults: dict[str, int], label: str
+) -> dict[str, int | float]:
+    if not isinstance(font_sizes, dict):
+        raise SettingsError(f"{label}.font_sizes must be an object")
+    unknown_sizes = set(font_sizes) - set(defaults)
+    if unknown_sizes:
+        raise SettingsError(
+            f"Unknown {label}.font_sizes setting: {sorted(unknown_sizes)[0]}"
+        )
+    validated = {**defaults, **font_sizes}
+    for name, value in validated.items():
+        validated[name] = _positive_number(value, f"{label}.font_sizes.{name}")
+    return validated
+
+
+def _validate_bounds(bounds: Any, label: str) -> dict[str, int]:
     if not isinstance(bounds, dict):
         raise SettingsError(f"{label} must be an object with x, y, width, and height")
     result: dict[str, int] = {}
@@ -326,7 +377,8 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             raise SettingsError(f"overlay.{key} must be an object")
         allowed_keys = {"font_family", "colors"}
         if key != "control":
-            allowed_keys.update({"width", "height"})
+            allowed_keys.update({"width", "height"})
+        allowed_keys.add("font_sizes")
         if key == "prematch":
             allowed_keys.add("opacity")
         unknown_keys = set(section) - allowed_keys
@@ -336,6 +388,8 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             )
         if "colors" in section and not isinstance(section["colors"], dict):
             raise SettingsError(f"overlay.{key}.colors must be an object")
+        if "font_sizes" in section and not isinstance(section["font_sizes"], dict):
+            raise SettingsError(f"overlay.{key}.font_sizes must be an object")
     overlay = {
         key: {
             **overlay_defaults[key],
@@ -344,11 +398,27 @@ def validate_settings(raw: Any) -> dict[str, Any]:
                 **overlay_defaults[key]["colors"],
                 **overlay.get(key, {}).get("colors", {}),
             },
-        }
-        for key in ("control", "scoreboard", "prematch")
-    }
-    for key in ("control", "scoreboard", "prematch"):
-        overlay[key] = _validate_overlay_style(overlay[key], f"overlay.{key}")
+            "font_sizes": {
+                **overlay_defaults[key]["font_sizes"],
+                **overlay.get(key, {}).get("font_sizes", {}),
+            },
+        }
+        for key in ("control", "scoreboard", "prematch")
+    }
+    for key in ("control", "scoreboard", "prematch"):
+        extra_colors = {"current_score": "#e8bd68"}
+        overlay[key] = _validate_overlay_style(
+            overlay[key], f"overlay.{key}", extra_colors=extra_colors
+        )
+    font_size_defaults = {
+        "control": DEFAULT_CONTROL_FONT_SIZES,
+        "scoreboard": DEFAULT_SCOREBOARD_FONT_SIZES,
+        "prematch": DEFAULT_PREMATCH_FONT_SIZES,
+    }
+    for key, defaults in font_size_defaults.items():
+        overlay[key]["font_sizes"] = _validate_overlay_font_sizes(
+            overlay[key]["font_sizes"], defaults, f"overlay.{key}"
+        )
     for key in ("scoreboard", "prematch"):
         for dimension in ("width", "height"):
             value = overlay[key].get(dimension)
