@@ -99,8 +99,28 @@ Below are diagnostic endpoints for troubleshooting and inspecting the app's stat
 - OCR status: <http://127.0.0.1:5000/api/ocr/status>
 - Effective settings/reload status: <http://127.0.0.1:5000/api/settings>
 
+## Building standalone Windows releases
+
+To package distributable OCR and manual-only versions that run without a Python
+installation, follow [packaging/README.md](packaging/README.md).
+
+## Use a packaged Windows release
+
+If you received a `SumoOverlay-OCR.zip` or `SumoOverlay-NoOCR.zip`, extract the
+entire ZIP to a folder, then run `SumoOverlay-OCR.exe` or
+`SumoOverlay-NoOCR.exe` from that folder. No Python installation is needed.
+Keep the console window open while using the app, and open
+<http://127.0.0.1:5000/control> in your browser. Press **Ctrl+C** in the
+console window to stop the app.
+
+The OCR release starts with automated OCR control. EasyOCR downloads its
+Japanese recognition models the first time OCR is used, so that first use needs
+an internet connection. The no-OCR release starts in manual mode and does not
+include OCR. In either release, keep the full folder together; the editable
+`config.yaml` beside the executable controls the server and overlay settings.
+
 On the control page, use **Previous Bout** and **Next Bout** for manual synchronization. After a bout finishes, optionally choose **East Wins** or **West Wins** to show that result in the Control page and overlays. This temporarily adds one win to the selected wrestler and one loss to the other wrestler's displayed  record.
-If in manual mode, enter a division number from 1 (Makuuchi) to 6 (Jonokuchi) and choose **Go to division** to jump to that division's first scheduled bout. This requires `division: 0` so all six divisions are loaded. Set match control to **Manual** for button-driven selection or **Automated** for OCR selection. The OCR status appears below the mode control.
+Use **Basho ID**, **Division**, and **Day** on the control page to change the tournament data without editing `config.yaml`. Make any combination of changes and submit them together; unchanged fields are left as-is. The updated data settings are saved to the configuration file and the schedule reloads. If using OCR while the broadcast can move between divisions, select **All divisions**; choosing one division limits OCR matching to bouts in that division. Set match control to **Manual** for button-driven selection or **Automated** for OCR selection. The OCR status appears below the mode control.
 
 For the pre-match overlay, use the separate **Salaried divisions** and **Unsalaried divisions** duration fields and click **Save duration** to choose how long the pre-match card appears after a bout change. Set either value to `0` to disable timed auto-show for that group. **Show pre-match until I turn it off** pins the card on-screen until you press **Hide pre-match now**; manual display remains available even when timed auto-show is disabled. These settings are saved in `config.yaml`.
 

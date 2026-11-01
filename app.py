@@ -7,6 +7,7 @@ import base64
 import copy
 import io
 import logging
+import sys
 from pathlib import Path
 from threading import RLock
 from typing import Any, Callable
@@ -16,12 +17,24 @@ from flask_socketio import SocketIO, emit
 from jinja2 import ChoiceLoader, FileSystemLoader
 
 from bout_state import BoutController
-from config import DIVISION_NAMES, SettingsError, SettingsWatcher, load_settings
+from config import (
+    DIVISION_NAMES,
+    SettingsError,
+    SettingsWatcher,
+    load_settings,
+    validate_settings,
+)
 from ocr_scanner import OCRScanner
 from sumo_data import BashoSchedule, SumoApiClient, SumoApiError
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.yaml")
+def _application_directory() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+DEFAULT_CONFIG_PATH = _application_directory() / "config.yaml"
 DATA_SETTINGS = ("basho_id", "division", "day", "api")
 
 
@@ -266,6 +279,38 @@ def create_app(
                 },
             }
         )
+
+    @app.post("/api/control/data-settings")
+    def update_data_settings() -> Any:
+        if watcher is None:
+            return jsonify({"error": "Live configuration reload is disabled"}), 503
+
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "a JSON object is required"}), 400
+        allowed_fields = {"basho_id", "division", "day"}
+        unknown_fields = set(payload) - allowed_fields
+        if unknown_fields:
+            return jsonify({
+                "error": f"unknown setting: {sorted(unknown_fields)[0]}"
+            }), 400
+        if not payload:
+            return jsonify({"error": "provide basho_id, division, and/or day"}), 400
+
+        with settings_lock:
+            updated_settings = copy.deepcopy(active_settings)
+        updated_settings.update(payload)
+        try:
+            validated = validate_settings(updated_settings)
+        except SettingsError as error:
+            return jsonify({"error": str(error)}), 400
+
+        try:
+            watcher.write(validated)
+            return jsonify(public_state())
+        except (SettingsError, SumoApiError) as error:
+            app.logger.error("Unable to update basho data settings: %s", error)
+            return jsonify({"error": str(error)}), 500
 
     @app.get("/api/ocr/status")
     def get_ocr_status() -> Any:
@@ -683,7 +728,7 @@ def create_app(
     return app
 
 
-def main() -> None:
+def main(enable_ocr: bool = True) -> None:
     parser = argparse.ArgumentParser(description="Run the Sumo OBS overlay server")
     parser.add_argument(
         "--config",
@@ -701,7 +746,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     app = create_app(
         config_path=arguments.config,
-        enable_ocr=True,
+        enable_ocr=enable_ocr,
         override_config_path=arguments.override_config,
     )
     watcher: SettingsWatcher = app.extensions["settings_watcher"]

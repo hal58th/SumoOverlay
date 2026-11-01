@@ -5,9 +5,18 @@ from pathlib import Path
 import pytest
 import yaml
 
+import app as app_module
 from app import create_app
 from config import SettingsError, default_settings, load_settings, validate_settings
 from sumo_data import DIVISION_ORDER, Bout, BoutRecord, BoutSide, SumoApiError
+
+
+def test_frozen_application_uses_executable_directory(monkeypatch, tmp_path):
+    executable = tmp_path / "SumoOverlay.exe"
+    monkeypatch.setattr(app_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app_module.sys, "executable", str(executable))
+
+    assert app_module._application_directory() == tmp_path
 
 
 def make_bout(match_no, east, west):
@@ -889,6 +898,105 @@ def test_control_mode_is_persisted_to_yaml_config(tmp_path):
             "pre_match_unsalaried_seconds",
             "pre_match_pinned",
         }
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_basho_data_settings_update_a_subset_or_all_fields(tmp_path):
+    settings_path = tmp_path / "config.yaml"
+    settings = default_settings()
+    settings["server"]["watch_interval_seconds"] = 0.1
+    write_config(settings_path, settings)
+    schedule_settings = []
+
+    def schedule_factory(updated_settings):
+        schedule_settings.append(
+            (
+                updated_settings["basho_id"],
+                updated_settings["division"],
+                updated_settings["day"],
+            )
+        )
+        return FakeSchedule([make_bout(1, 10, 11)])
+
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+        schedule_factory=schedule_factory,
+    )
+    client = app.test_client()
+
+    try:
+        page = client.get("/control").get_data(as_text=True)
+        assert 'id="data-settings"' in page
+        assert 'id="data-basho-id"' in page
+        assert 'id="data-division"' in page
+        assert 'id="data-day"' in page
+
+        day_response = client.post(
+            "/api/control/data-settings", json={"day": 7}
+        )
+        assert day_response.status_code == 200
+        assert day_response.json["settings"]["bashoId"] == "202505"
+        assert day_response.json["settings"]["division"] == 0
+        assert day_response.json["settings"]["day"] == 7
+        assert schedule_settings[-1] == ("202505", 0, 7)
+
+        two_fields_response = client.post(
+            "/api/control/data-settings",
+            json={"basho_id": "202607", "division": 3},
+        )
+        assert two_fields_response.status_code == 200
+        assert two_fields_response.json["settings"]["bashoId"] == "202607"
+        assert two_fields_response.json["settings"]["division"] == 3
+        assert two_fields_response.json["settings"]["day"] == 7
+        assert schedule_settings[-1] == ("202607", 3, 7)
+
+        all_fields_response = client.post(
+            "/api/control/data-settings",
+            json={"basho_id": "202609", "division": 2, "day": 12},
+        )
+        assert all_fields_response.status_code == 200
+        assert all_fields_response.json["settings"]["bashoId"] == "202609"
+        assert all_fields_response.json["settings"]["division"] == 2
+        assert all_fields_response.json["settings"]["day"] == 12
+        assert schedule_settings[-1] == ("202609", 2, 12)
+
+        saved_settings = yaml.safe_load(
+            settings_path.read_text(encoding="utf-8")
+        )
+        assert saved_settings["basho_id"] == "202609"
+        assert saved_settings["division"] == 2
+        assert saved_settings["day"] == 12
+    finally:
+        app.extensions["settings_watcher"].stop()
+
+
+def test_basho_data_settings_reject_invalid_values_without_saving(tmp_path):
+    settings_path = tmp_path / "config.yaml"
+    settings = default_settings()
+    settings["server"]["watch_interval_seconds"] = 0.1
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=True,
+    )
+
+    try:
+        response = app.test_client().post(
+            "/api/control/data-settings", json={"day": 16}
+        )
+
+        assert response.status_code == 400
+        assert "day must be an integer from 1 through 15" in response.json["error"]
+        saved_settings = yaml.safe_load(
+            settings_path.read_text(encoding="utf-8")
+        )
+        assert saved_settings["day"] == 1
     finally:
         app.extensions["settings_watcher"].stop()
 
