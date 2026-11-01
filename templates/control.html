@@ -23,19 +23,24 @@
     .winner-buttons button:first-child { background: #258b43; color: #fff; }
     .winner-buttons button:last-child { background: #7139ad; color: #fff; }
     .buttons { display: flex; gap: 8px; margin-top: 10px; }
-    .division-jump { display: flex; align-items: end; gap: 8px; margin-top: 10px;
-      padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
-    .division-jump label { display: grid; flex: 1; gap: 4px; font-size: 13px; }
+    .data-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: end; gap: 8px; margin-top: 10px; padding: 10px;
+      border: 1px solid #434a56; border-radius: 8px; }
+    .data-setting-field { display: grid; gap: 4px; font-size: 13px; }
+    .data-settings button, .data-settings-status { grid-column: 1 / -1; }
+    .data-settings-status { margin: 0; color: var(--overlay-muted-color); font-size: 12px; }
     .mode-row { display: flex; align-items: center; justify-content: space-between;
       gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
     .mode-label { color: var(--overlay-accent-color); font-weight: 700; }
     .pre-match-controls { display: grid; grid-template-columns: repeat(2, minmax(100px, 1fr)) auto;
       align-items: end; gap: 8px; margin-top: 10px; padding: 10px;
       border: 1px solid #434a56; border-radius: 8px; }
+    .pre-match-controls h2 { grid-column: 1 / -1; margin: 0; font-size: 15px;
+      color: var(--overlay-accent-color); }
     .pre-match-duration { display: grid; gap: 4px; font-size: 13px; }
-    .pre-match-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+    .pre-match-actions { display: flex; flex-direction: column; gap: 6px; }
     .pre-match-help { grid-column: 1 / -1; margin: 0; color: var(--overlay-muted-color); font-size: 12px; }
-    input { min-width: 0; padding: 8px; border: 1px solid #687181; border-radius: 6px;
+    input, select { min-width: 0; padding: 8px; border: 1px solid #687181; border-radius: 6px;
       background: #202632; color: var(--overlay-text-color); font-size: 14px; }
     .links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
     a { color: var(--overlay-accent-color); }
@@ -100,7 +105,8 @@
       .control-panel .matchup { gap: 8px; }
       .control-panel .rank-record { gap: 6px; }
       .mode-row { align-items: flex-start; flex-direction: column; }
-      .division-jump { align-items: stretch; }
+      .data-settings { grid-template-columns: 1fr; }
+      .data-settings button, .data-settings-status { grid-column: auto; }
       .pre-match-controls { grid-template-columns: 1fr; }
       .pre-match-actions { justify-content: stretch; }
       .pre-match-help { grid-column: auto; }
@@ -149,11 +155,27 @@
       <button id="prev" type="button">Previous Bout</button>
       <button id="next" type="button">Next Bout</button>
     </div>
-    <form id="division-jump" class="division-jump">
-      <label for="division-number">Go to division (1 Makuuchi · 6 Jonokuchi)
-        <input id="division-number" type="number" min="1" max="6" step="1" required>
+    <form id="data-settings" class="data-settings">
+      <label class="data-setting-field" for="data-basho-id">Basho ID (YYYYMM)
+        <input id="data-basho-id" type="text" inputmode="numeric" pattern="[0-9]{6}"
+          minlength="6" maxlength="6" required data-dirty="false">
       </label>
-      <button type="submit">Go to division</button>
+      <label class="data-setting-field" for="data-division">Division
+        <select id="data-division" required data-dirty="false">
+          <option value="0">All divisions</option>
+          <option value="1">Makuuchi</option>
+          <option value="2">Juryo</option>
+          <option value="3">Makushita</option>
+          <option value="4">Sandanme</option>
+          <option value="5">Jonidan</option>
+          <option value="6">Jonokuchi</option>
+        </select>
+      </label>
+      <label class="data-setting-field" for="data-day">Day (1–15)
+        <input id="data-day" type="number" min="1" max="15" step="1" required data-dirty="false">
+      </label>
+      <button type="submit">Update basho settings</button>
+      <p id="data-settings-status" class="data-settings-status" role="status"></p>
     </form>
     <section class="mode-row">
       <div>
@@ -261,6 +283,7 @@
       <p id="ocr-nudge-status"></p>
     </section>
     <section class="pre-match-controls">
+      <h2>Pre-match display duration</h2>
       <label class="pre-match-duration" for="pre-match-salaried-seconds">
         Salaried divisions (Makuuchi/Juryo), seconds (0 = off)
         <input id="pre-match-salaried-seconds" type="number" min="0" step="1" value="10">
@@ -270,10 +293,10 @@
         <input id="pre-match-unsalaried-seconds" type="number" min="0" step="1" value="10">
       </label>
       <div class="pre-match-actions">
+        <button id="pre-match-pin" type="button">Permanent Pre-Match On</button>
         <button id="save-duration" type="button">Save duration</button>
-        <button id="pre-match-pin" type="button">Show pre-match until I turn it off</button>
       </div>
-      <p class="pre-match-help">Set duration to 0 to turn timed auto-show off. The show button keeps the card visible until you hide it.</p>
+      <p class="pre-match-help">Set duration to 0 to turn timed auto-show off. Permanent Pre-Match On keeps the card visible until you choose Permanent Pre-Match Off.</p>
     </section>
     <nav class="links">
       <a href="/scoreboard" target="_blank">Open scoreboard overlay</a>
@@ -291,6 +314,11 @@
     let controlSocket = null;
     let currentBoutKey = null;
     let ocrEnabled = false;
+    const dataSettingFields = {
+      basho_id: "data-basho-id",
+      division: "data-division",
+      day: "data-day"
+    };
 
     // Nudge-field dirty tracking
     const nudgeFieldIds = [
@@ -396,6 +424,15 @@
       if (response.settings && response.settings.overlay && response.settings.overlay.control) {
         applyOverlayStyle(response.settings.overlay.control);
       }
+      if (response.settings.basho_id !== undefined) {
+        setDataSettingIfClean("data-basho-id", response.settings.basho_id);
+      }
+      if (response.settings.division !== undefined) {
+        setDataSettingIfClean("data-division", response.settings.division);
+      }
+      if (response.settings.day !== undefined) {
+        setDataSettingIfClean("data-day", response.settings.day);
+      }
       currentMode = response.settings.control.mode;
       ocrEnabled = !!(response.settings.ocr && response.settings.ocr.enabled);
       document.getElementById("mode").textContent =
@@ -416,7 +453,7 @@
       }
       preMatchPinned = response.settings.control.pre_match_pinned;
       document.getElementById("pre-match-pin").textContent =
-        preMatchPinned ? "Hide pre-match now" : "Show pre-match until I turn it off";
+        preMatchPinned ? "Permanent Pre-Match Off" : "Permanent Pre-Match On";
       if (response.reloadError) {
         document.getElementById("error").textContent =
           `Settings reload failed; continuing with previous settings. ${response.reloadError}`;
@@ -446,6 +483,12 @@
         }
       }
       updateOcrAutomatedSectionVisibility();
+    }
+    function setDataSettingIfClean(id, value) {
+      const input = document.getElementById(id);
+      if (input.dataset.dirty !== "true" && document.activeElement !== input) {
+        input.value = value;
+      }
     }
     function setNudgeIfClean(id, value) {
       const el = document.getElementById(id);
@@ -605,7 +648,12 @@
     document.getElementById("next").addEventListener("click", () => move("next"));
     document.getElementById("east-wins").addEventListener("click", () => announceWinner("east"));
     document.getElementById("west-wins").addEventListener("click", () => announceWinner("west"));
-    document.getElementById("division-jump").addEventListener("submit", jumpToDivision);
+    document.getElementById("data-settings").addEventListener("submit", saveDataSettings);
+    Object.values(dataSettingFields).forEach(id => {
+      const input = document.getElementById(id);
+      input.addEventListener("input", () => input.dataset.dirty = "true");
+      input.addEventListener("change", () => input.dataset.dirty = "true");
+    });
     document.getElementById("mode-toggle").addEventListener("click", toggleMode);
     document.getElementById("pre-match-pin").addEventListener("click", togglePinnedPreMatch);
     document.getElementById("save-duration").addEventListener("click", saveDuration);
@@ -669,27 +717,43 @@
         .catch(error => document.getElementById("error").textContent = error.message)
         .finally(() => setBusy(false));
     }
-    function jumpToDivision(event) {
+    function saveDataSettings(event) {
       event.preventDefault();
-      const division = Number(document.getElementById("division-number").value);
-      if (!Number.isInteger(division) || division < 1 || division > 6) {
-        document.getElementById("error").textContent =
-          "Enter a division number from 1 through 6.";
+      const payload = {};
+      Object.entries(dataSettingFields).forEach(([key, id]) => {
+        const input = document.getElementById(id);
+        if (input.dataset.dirty !== "true") return;
+        payload[key] = key === "basho_id" ? input.value : Number(input.value);
+      });
+      const status = document.getElementById("data-settings-status");
+      if (Object.keys(payload).length === 0) {
+        status.textContent = "No basho settings have changed.";
         return;
       }
       setBusy(true);
       document.getElementById("error").textContent = "";
-      fetch("/api/control/division", {
+      status.textContent = "Saving basho settings…";
+      fetch("/api/control/data-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ division })
+        body: JSON.stringify(payload)
       })
         .then(async response => {
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || "Unable to jump to division");
-          renderBout(payload);
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Unable to update basho settings");
+          Object.entries(payload).forEach(([key, value]) => {
+            const input = document.getElementById(dataSettingFields[key]);
+            const currentValue = key === "basho_id" ? input.value : Number(input.value);
+            if (currentValue === value) input.dataset.dirty = "false";
+          });
+          renderBout(result);
+          status.textContent = "Basho settings saved.";
+          return loadSettings();
         })
-        .catch(error => document.getElementById("error").textContent = error.message)
+        .catch(error => {
+          status.textContent = "";
+          document.getElementById("error").textContent = error.message;
+        })
         .finally(() => setBusy(false));
     }
     function toggleMode() {
