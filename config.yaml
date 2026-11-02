@@ -1,6 +1,6 @@
 basho_id: '202609'
 division: 0
-day: 15
+day: 1
 api:
   base_url: https://sumo-api.com/api
   timeout_seconds: 15

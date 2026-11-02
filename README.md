@@ -157,7 +157,7 @@ The scanner captures one rectangle of the monitor (`ocr.capture_regions.scoreshe
 
 #### 1. Interactive Calibration Tool (`/calibrate`)
 
-Open <http://127.0.0.1:5000/calibrate> in your browser (or click **Open full calibration tool →** at the bottom of the Control page):
+Open <http://127.0.0.1:5000/calibrate> in your browser (or click **Calibrate OCR Tool** in the OCR Preview on the Control page):
 
 1. **Take screenshot**: Freezes a full-screen snapshot of the selected OCR monitor and displays it on the canvas.
 2. **Draw name boxes**:
@@ -166,18 +166,15 @@ Open <http://127.0.0.1:5000/calibrate> in your browser (or click **Open full cal
    - Aim for the large Japanese ring name only; avoid the small pronunciation line above or neighboring scoreboard graphics.
 
 3. **Automatic capture envelope**: The purple **Capture Region** box automatically wraps around both drawn name boxes. If you wish to frame the broadcast scoreboard banner manually, select **Draw Capture Region** and drag the purple box.
-4. **Test OCR**: Click **Test OCR** to immediately test EasyOCR against the screenshot frame you are viewing. The result box displays the recognized text, confidence score, and visual thumbnail previews of both cropped names.
+4. **OCR Preview / Test OCR**: Click **Refresh Preview** to view the left and right crops produced by the current boxes on the screenshot frame. Click **Test OCR** to also display the recognized text and confidence scores.
 5. **Save to config**: Click **Save to config** to write the new `scoresheet` and relative `name_boxes` coordinates directly to `config.yaml` (or your active override file). The live configuration watcher applies the changes immediately.
 
-#### 2. Live Crop Previews & Nudge Controls (`/control`)
+#### 2. OCR Preview (`/control`)
 
-When match control is set to **Automated** and `ocr.enabled` is `true`, the Control page displays a **Live OCR Preview** section:
+When match control is set to **Automated** and `ocr.enabled` is `true`, the Control page displays an **OCR Preview** section:
 
-- **Live Thumbnails**: Auto-polls every 2 seconds, displaying the current image cropped by the scanner along with recognized text and confidence percentage.
-- **Fine-Tuning Nudge Inputs**: Eight numeric controls ($X, Y, 	ext{Width}, 	ext{Height}$ for both Left and Right name boxes) flanked by `−` and `+` buttons.
-  - Clicking `−` or `+` nudges the coordinate by 1 pixel.
-  - **Shift-clicking** `−` or `+` nudges by 5 pixels at a time.
-- **Save Box Positions**: Click **Save box positions** to commit your nudged adjustments directly to `config.yaml`.
+- Click **Refresh Preview** to display the current left and right name crops, recognized text, and confidence.
+- Click **Calibrate OCR Tool** to open the screenshot-based calibration page, where you can draw boxes and preview the crops before saving.
 
 #### Manual Configuration
 

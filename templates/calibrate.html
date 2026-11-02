@@ -65,6 +65,17 @@
     .legend-swatch { width: 20px; height: 4px; border-radius: 2px; }
     /* Actions */
     .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+    .ocr-preview { margin-top: 14px; }
+    .ocr-preview-heading { display: flex; gap: 8px; flex-wrap: wrap;
+      align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .ocr-preview-heading h3 { margin: 0; font-size: 15px; color: var(--overlay-accent-color); }
+    .ocr-preview .result-row { gap: 16px; }
+    .ocr-preview .result-cell { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+    .ocr-preview .result-cell label { font-size: 12px; color: var(--overlay-muted-color); }
+    .ocr-preview .result-thumb { margin-top: 0; }
+    .ocr-preview .result-thumb img { max-height: 80px; }
+    .preview-text { font-size: 13px; text-align: center; }
+    .preview-confidence { font-size: 11px; color: var(--overlay-muted-color); }
     .result-box { margin-top: 14px; padding: 12px; border: 1px solid #434a56; border-radius: 8px;
       font-size: 13px; background: #161c28; }
     .result-box h3 { margin: 0 0 8px; font-size: 13px; color: var(--overlay-accent-color); }
@@ -147,6 +158,27 @@
         </div>
       </div>
     </div>
+
+    <section class="result-box ocr-preview" aria-live="polite">
+      <div class="ocr-preview-heading">
+        <h3>OCR Preview</h3>
+        <button id="refresh-ocr-preview" type="button" class="secondary">Refresh Preview</button>
+      </div>
+      <div class="result-row">
+        <div class="result-cell">
+          <label for="preview-left-img">Left name crop</label>
+          <div class="result-thumb"><img id="preview-left-img" alt="Left name crop" style="display:none"></div>
+          <div class="preview-text" id="preview-left-text"></div>
+          <div class="preview-confidence" id="preview-left-conf"></div>
+        </div>
+        <div class="result-cell">
+          <label for="preview-right-img">Right name crop</label>
+          <div class="result-thumb"><img id="preview-right-img" alt="Right name crop" style="display:none"></div>
+          <div class="preview-text" id="preview-right-text"></div>
+          <div class="preview-confidence" id="preview-right-conf"></div>
+        </div>
+      </div>
+    </section>
 
     <div class="actions">
       <button id="btn-test" type="button" class="secondary">Test OCR</button>
@@ -514,14 +546,11 @@
       el.className = type === "ok" ? "ok" : type === "err" ? "err" : "";
     }
 
-    // ── Test OCR ──────────────────────────────────────────────────────────────
-    document.getElementById("btn-test").addEventListener("click", () => {
+    function runOcrPreview() {
       const cap = readBoxFromInputs("capture");
       const left = readBoxFromInputs("left");
       const right = readBoxFromInputs("right");
-      setStatus("Running OCR on screenshot…", "");
-      document.getElementById("result-box").style.display = "none";
-      fetch("/api/ocr/test", {
+      return fetch("/api/ocr/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -529,13 +558,48 @@
           left:    { x: left.x, y: left.y, w: left.width, h: left.height },
           right:   { x: right.x, y: right.y, w: right.width, h: right.height },
         }),
-      })
-        .then(async r => {
-          const payload = await r.json();
-          if (!r.ok) throw new Error(payload.error || "OCR test failed");
-          return payload;
-        })
+      }).then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "OCR preview failed");
+        return payload;
+      });
+    }
+
+    function renderOcrPreview(payload) {
+      for (const side of ["left", "right"]) {
+        const image = document.getElementById(`preview-${side}-img`);
+        const imageData = payload[`${side}Image`];
+        image.style.display = imageData ? "block" : "none";
+        if (imageData) image.src = `data:image/png;base64,${imageData}`;
+        document.getElementById(`preview-${side}-text`).textContent =
+          payload[side] || "";
+        document.getElementById(`preview-${side}-conf`).textContent =
+          payload[`${side}Confidence`] != null
+            ? `${Math.round(payload[`${side}Confidence`] * 100)}% confidence`
+            : "";
+      }
+    }
+
+    document.getElementById("refresh-ocr-preview").addEventListener("click", event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      setStatus("Refreshing preview…", "");
+      runOcrPreview()
         .then(payload => {
+          renderOcrPreview(payload);
+          setStatus("Preview updated.", "ok");
+        })
+        .catch(error => setStatus(`Preview failed: ${error.message}`, "err"))
+        .finally(() => button.disabled = false);
+    });
+
+    // ── Test OCR ──────────────────────────────────────────────────────────────
+    document.getElementById("btn-test").addEventListener("click", () => {
+      setStatus("Running OCR on screenshot…", "");
+      document.getElementById("result-box").style.display = "none";
+      runOcrPreview()
+        .then(payload => {
+          renderOcrPreview(payload);
           document.getElementById("res-left").textContent = payload.left || "(empty)";
           document.getElementById("res-right").textContent = payload.right || "(empty)";
           document.getElementById("res-left-conf").textContent =

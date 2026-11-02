@@ -658,7 +658,7 @@ def create_app(
         if winner not in ("east", "west"):
             raise ValueError("winner must be 'east' or 'west'")
         with result_lock:
-            announced_winner = winner
+            announced_winner = None if announced_winner == winner else winner
         return public_state()
 
     @app.post("/api/control/winner")

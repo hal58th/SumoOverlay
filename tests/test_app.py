@@ -200,6 +200,14 @@ def test_http_winner_action_works_without_socket_and_makes_no_api_requests():
     assert "recordEmphasis" not in response.json
     assert schedule.h2h_calls == 0
 
+    repeated_response = app.test_client().post(
+        "/api/control/winner", json={"winner": "west"}
+    )
+    assert repeated_response.status_code == 200
+    assert repeated_response.json["east"]["record"] == {"wins": 1, "losses": 0}
+    assert repeated_response.json["west"]["record"] == {"wins": 0, "losses": 1}
+    assert "announcedWinner" not in repeated_response.json
+
 
 def test_announced_winner_is_cleared_when_manually_moving_between_bouts():
     schedule = FakeSchedule(
@@ -1393,6 +1401,14 @@ def test_calibrate_page_renders_template():
     response = client.get("/calibrate")
     assert response.status_code == 200
     assert b"OCR Calibration" in response.data
+    assert b"Left name crop" in response.data
+    assert b"Right name crop" in response.data
+    assert b"Refresh Preview" in response.data
+    assert b"runOcrPreview()" in response.data
+    page = response.text
+    assert page.index('class="coords-grid"') < page.index(
+        'class="result-box ocr-preview"'
+    )
 
 
 def test_ocr_screenshot_endpoint(monkeypatch):
@@ -1501,11 +1517,30 @@ def test_save_ocr_calibration_endpoint(tmp_path):
         app.extensions["settings_watcher"].stop()
 
 
-def test_control_page_nudge_css_bounds():
+def test_control_page_uses_calibration_tool_for_box_positions():
     root = Path(__file__).resolve().parents[1]
     control_html = (root / "templates" / "control.html").read_text(encoding="utf-8")
-    assert "grid-template-columns: repeat(4, minmax(0, 1fr));" in control_html
-    assert ".ocr-nudge-field { display: grid; gap: 3px; font-size: 12px; min-width: 0; }" in control_html
+    ocr_section = control_html.split(
+        'id="ocr-automated-section"', maxsplit=1
+    )[1].split("</section>", maxsplit=1)[0]
+
+    assert 'href="/calibrate"' in ocr_section
+    assert "Calibrate OCR Tool" in ocr_section
+    preview_actions = ocr_section.split(
+        'class="ocr-preview-actions"', maxsplit=1
+    )[1].split("</div>", maxsplit=1)[0]
+    assert preview_actions.index("Refresh Preview") < preview_actions.index(
+        "Calibrate OCR Tool"
+    )
+    assert "save-box-positions" not in control_html
+    assert "nudge-left-x" not in control_html
+    assert "Select the winner to show the result on the overlays until the bout changes." not in control_html
+    assert "West win shown until the bout changes." not in control_html
+    assert "East win shown until the bout changes." not in control_html
+    assert "Set duration to 0 to turn timed auto-show off." not in control_html
+    assert control_html.index('class="pre-match-controls"') < control_html.index(
+        'id="ocr-automated-section"'
+    )
 
 
 def test_ocr_preview_runs_only_when_requested():
