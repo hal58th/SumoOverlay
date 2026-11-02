@@ -1508,6 +1508,15 @@ def test_control_page_nudge_css_bounds():
     assert ".ocr-nudge-field { display: grid; gap: 3px; font-size: 12px; min-width: 0; }" in control_html
 
 
+def test_ocr_preview_runs_only_when_requested():
+    root = Path(__file__).resolve().parents[1]
+    control_html = (root / "templates" / "control.html").read_text(encoding="utf-8")
+
+    assert 'id="refresh-ocr-preview"' in control_html
+    assert 'addEventListener("click", loadCropPreview)' in control_html
+    assert "setInterval(loadCropPreview" not in control_html
+
+
 def test_ocr_test_endpoint_uses_buffered_screenshot_and_returns_images():
     import numpy as np
 

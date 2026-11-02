@@ -211,7 +211,8 @@
     <p id="ocr-last-action" role="status">Last OCR action: No stable OCR match has been checked yet.</p>
     <!-- Feature 7+8: OCR crop preview and nudge controls — only visible in automated+OCR-enabled mode -->
     <section id="ocr-automated-section" style="display:none" aria-live="polite">
-      <h2>Live OCR Preview</h2>
+      <h2>OCR Preview</h2>
+      <button id="refresh-ocr-preview" type="button">Refresh preview</button>
       <div class="ocr-crops">
         <div class="ocr-crop-panel">
           <label>Left name crop</label>
@@ -589,13 +590,20 @@
     loadOcrStatus();
     window.setInterval(loadOcrStatus, 2000);
 
-    // Feature 7: crop preview polling
+    // Keep diagnostic OCR separate from the automatic scanner unless requested.
     function loadCropPreview() {
       if (!ocrEnabled || currentMode !== "automated") return;
+      const button = document.getElementById("refresh-ocr-preview");
+      button.disabled = true;
       fetch("/api/ocr/crop-preview")
-        .then(r => r.json())
+        .then(async response => {
+          const data = await response.json();
+          if (!response.ok || data.error) {
+            throw new Error(data.error || "Unable to refresh OCR preview");
+          }
+          return data;
+        })
         .then(data => {
-          if (data.error) return;
           if (data.left) {
             document.getElementById("ocr-left-img").src = "data:image/png;base64," + data.left;
           }
@@ -609,9 +617,13 @@
           document.getElementById("ocr-right-conf").textContent =
             data.rightConfidence != null ? `${Math.round(data.rightConfidence * 100)}% confidence` : "";
         })
-        .catch(() => {});
+        .catch(error => {
+          document.getElementById("ocr-status").textContent =
+            `OCR preview failed: ${error.message}`;
+        })
+        .finally(() => button.disabled = false);
     }
-    window.setInterval(loadCropPreview, 2000);
+    document.getElementById("refresh-ocr-preview").addEventListener("click", loadCropPreview);
 
     // Feature 8: save box positions
     document.getElementById("save-box-positions").addEventListener("click", () => {
