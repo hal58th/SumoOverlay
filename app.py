@@ -21,6 +21,7 @@ from config import (
     DIVISION_NAMES,
     SettingsError,
     SettingsWatcher,
+    initialize_config_file,
     load_settings,
     validate_settings,
 )
@@ -732,7 +733,7 @@ def main(enable_ocr: bool = True) -> None:
     parser.add_argument(
         "--config",
         type=Path,
-        default=DEFAULT_CONFIG_PATH,
+        default=None,
         help=f"Path to the YAML settings file (default: {DEFAULT_CONFIG_PATH})",
     )
     parser.add_argument(
@@ -743,8 +744,15 @@ def main(enable_ocr: bool = True) -> None:
     arguments = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
+    config_path = arguments.config or DEFAULT_CONFIG_PATH
+    if arguments.config is None:
+        initialize_config_file(
+            config_path,
+            logging.getLogger(__name__),
+            enable_ocr=enable_ocr,
+        )
     app = create_app(
-        config_path=arguments.config,
+        config_path=config_path,
         enable_ocr=enable_ocr,
         override_config_path=arguments.override_config,
     )

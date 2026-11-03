@@ -15,72 +15,19 @@ It uses [OCR](#ocr-bout-detection) to recognize wrestler names on the broadcast 
 
     <img src="examples/SumoControls.png" alt="Control Website" width="400">
 
-Settings are read from `config.yaml`. The app watches that file and reloads valid changes while it is running. Optional OCR can recognize Japanese names on the scoreboard and select the uniquely matching scheduled bout automatically. OCR uses the exact Japanese-to-English lookup from [sumo-api.com](https://sumo-api.com)
+4. **Calibration** — a tool to help you adjust the OCR capture regions and name boxes for accurate recognition of wrestler names on the broadcast.
+
+    <img src="examples/SumoCalibration.png" alt="Calibration" width="400">
+
+Settings are read from `config.yaml`. The app creates the file from built-in defaults when the app starts. The app watches the file and reloads valid changes while it is running. Optional OCR can recognize Japanese names on the scoreboard and select the uniquely matching scheduled bout automatically. OCR uses the exact Japanese-to-English lookup from [sumo-api.com](https://sumo-api.com)
 
 ## Requirements
 
-- Python 3.10 or newer.
-- An internet connection to install packages and fetch data from sumo-api.com.
+- The zip of the project with the executable included.
+- An internet connection to fetch data from sumo-api.com.
 - OBS Studio or some other streaming software, if you want to stream the overlays.
-- This project folder. The examples assume it is `C:\SumoOverlay`.
 
 The base app uses CPU-only Python packages. OCR is optional and requires EasyOCR, PyTorch, MSS, and NumPy; a GPU is not required.
-
-## Install and run on Windows PowerShell
-
-These instructions are recommended when OBS is running on Windows.
-
-### 1. Open the project folder
-
-Open PowerShell from the Windows Start menu and enter:
-
-```powershell
-cd C:\SumoOverlay
-```
-
-If the project is somewhere else, replace the path. `Get-ChildItem` should show `app.py`, `config.yaml`, and `pyproject.toml`.
-
-### 2. Create a Python environment for this app
-
-The Windows `python` command may be redirected to the Microsoft Store even when Python is installed. Use the Python Launcher, `py`, to find Python:
-
-```powershell
-py --version
-py -0p
-```
-
-Choose an installed Python version that is 3.10 or newer. For example, if Python 3.11 is listed, run:
-
-```powershell
-py -3.11 -m venv .venv
-```
-
-Replace `3.11` with your installed version if it is different. You only need to create `.venv` once. If it already exists, skip this command.
-
-### 3. Install the app
-
-```powershell
-# Upgrade pip to the latest version
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-# Install with OCR support (recommended):
-.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"
-# Install without OCR support:
-.\.venv\Scripts\python.exe -m pip install -e .
-```
-
-Use the `.venv` Python shown in these commands to install and run the app. It installs Flask and the other app packages just for this project.
-
-### 4. Start the app
-
-Make any changes to `config.yaml`, then run:
-
-```powershell
-.\.venv\Scripts\python.exe app.py
-```
-
-Keep the PowerShell window open while using the overlays. Press **Ctrl+C** in that window to stop the app.
-
-If PowerShell says `python` is not installed, use `py` and `.\.venv\Scripts\python.exe` as shown above; the standalone `python` command is not needed. If `py` is also not recognized, turn off the `python.exe` and `python3.exe` App Installer aliases under **Settings → Apps → Advanced app settings → App execution aliases**, reopen PowerShell, and try again. If Python is not installed, install Python 3.11 or newer from [python.org](https://www.python.org/downloads/windows/), selecting **Add python.exe to PATH** and the Python Launcher if offered.
 
 ## Control page and addresses
 
@@ -90,14 +37,6 @@ With the app running, open:
 - Scoreboard overlay: <http://127.0.0.1:5000/scoreboard>
 - Pre-match overlay: <http://127.0.0.1:5000/prematch>
 - OCR calibration tool: <http://127.0.0.1:5000/calibrate>
-
-Below are diagnostic endpoints for troubleshooting and inspecting the app's state:
-
-- Current bout JSON: <http://127.0.0.1:5000/api/state>
-- Pre-match and H2H JSON: <http://127.0.0.1:5000/api/pre-match-state>
-- Kanji-to-English lookup: <http://127.0.0.1:5000/api/lookup>
-- OCR status: <http://127.0.0.1:5000/api/ocr/status>
-- Effective settings/reload status: <http://127.0.0.1:5000/api/settings>
 
 By default, the server is available only on the computer running SumoOverlay.
 To use OCR on the computer displaying the sumo stream while OBS runs on another
@@ -110,46 +49,25 @@ host computer's firewall if prompted. This exposes the app, including its
 control page and API, to devices on the LAN, so enable it only on a trusted
 network and do not forward the port to the internet.
 
-## Building standalone Windows releases
-
-To package distributable OCR and manual-only versions that run without a Python
-installation, follow [packaging/README.md](packaging/README.md).
-
 ## Use a packaged Windows release
 
-If you received a `SumoOverlay.zip` or `SumoOverlay-NoOCR.zip`, extract the
-entire ZIP to a folder, then run `SumoOverlay.exe` or
-`SumoOverlay-NoOCR.exe` from that folder. No Python installation is needed.
+Extract the entire `SumoOverlay.zip` or `SumoOverlay-NoOCR.zip` to a folder, then run `SumoOverlay.exe` or `SumoOverlay-NoOCR.exe` from that folder.
 Keep the console window open while using the app, and open
-<http://127.0.0.1:5000/control> in your browser. Press **Ctrl+C** in the
-console window to stop the app.
+<http://127.0.0.1:5000/control> in your browser.
 
 The OCR release starts with automated OCR control. EasyOCR downloads its
-Japanese recognition models the first time OCR is used, so that first use needs
-an internet connection. The no-OCR release starts in manual mode and does not
+Japanese recognition models the first time OCR is used. The no-OCR release starts in manual mode and does not
 include OCR. In either release, keep the full folder together; the editable
-`config.yaml` beside the executable controls the server and overlay settings.
+`config.yaml` controls the server and overlay settings.
+The first launch creates the config file automatically. When you update
+an existing release, keep your `config.yaml`: startup fills in settings
+that are new in the release without replacing your existing values. Only
+settings explicitly marked as deprecated by the app are removed.
 
-On the control page, use **Previous Bout** and **Next Bout** for manual synchronization. After a bout finishes, optionally choose **East Wins** or **West Wins** to show that result in the Control page and overlays. This temporarily adds one win to the selected wrestler and one loss to the other wrestler's displayed  record.
-Use **Basho ID**, **Division**, and **Day** on the control page to change the tournament data without editing `config.yaml`. Make any combination of changes and submit them together; unchanged fields are left as-is. The updated data settings are saved to the configuration file and the schedule reloads. If using OCR while the broadcast can move between divisions, select **All divisions**; choosing one division limits OCR matching to bouts in that division. Set match control to **Manual** for button-driven selection or **Automated** for OCR selection. The OCR status appears below the mode control.
+On the control page, use **Previous Bout** and **Next Bout** for manual synchronization. After a bout finishes, optionally choose **East Wins** or **West Wins** to show that result in the Control page and overlays. This temporarily adds one win to the selected wrestler and one loss to the other wrestler's displayed record.
+Use **Basho ID**, **Division**, and **Day** on the control page to change the tournament data. The updated data settings are saved to the configuration file and the schedule reloads. If using OCR, select **All divisions**; choosing one division limits OCR matching to bouts in that division. Set match control to **Manual** for button-driven selection or **Automated** for OCR selection.
 
-For the pre-match overlay, use the separate **Salaried divisions** and **Unsalaried divisions** duration fields and click **Save duration** to choose how long the pre-match card appears after a bout change. Set either value to `0` to disable timed auto-show for that group. **Show pre-match until I turn it off** pins the card on-screen until you press **Hide pre-match now**; manual display remains available even when timed auto-show is disabled. These settings are saved in `config.yaml`.
-
-## OCR bout detection
-
-OCR is opt-in at installation. To use it, install the optional ocr packages, then choose **Automated** on the Control page. The page reports whether OCR is paused, reading, confirming names, below the confidence threshold, matched to a bout, or reporting an error.
-
-### Install OCR on Windows
-
-Open PowerShell in the project folder and install the optional OCR dependencies into this project's virtual environment:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"
-```
-
-EasyOCR also installs PyTorch, so this step can take several minutes and needs an internet connection. On its first OCR use, EasyOCR downloads its text-detection and Japanese-recognition models; allow those downloads to finish before the broadcast. This project sets PyTorch to two CPU threads and explicitly disables GPU use. The regular app and unit tests do not load the OCR model unless the live scanner is started.
-
-Run `.\.venv\Scripts\python.exe app.py` from PowerShell on the Windows desktop where the sumo broadcast is playing.
+For the pre-match overlay, use the separate **Salaried divisions** and **Unsalaried divisions** duration fields and click **Save duration** to choose how long the pre-match card appears after a bout change. Set either value to `0` to disable timed auto-show for that group. **Show pre-match until I turn it off** pins the card on-screen until you press **Hide pre-match now**; manual display remains available even when timed auto-show is disabled.
 
 ### Calibrate OCR
 
@@ -166,7 +84,7 @@ Open <http://127.0.0.1:5000/calibrate> in your browser (or click **Calibrate OCR
    - Aim for the large Japanese ring name only; avoid the small pronunciation line above or neighboring scoreboard graphics.
 
 3. **Automatic capture envelope**: The purple **Capture Region** box automatically wraps around both drawn name boxes. If you wish to frame the broadcast scoreboard banner manually, select **Draw Capture Region** and drag the purple box.
-4. **OCR Preview / Test OCR**: Click **Refresh Preview** to view the left and right crops produced by the current boxes on the screenshot frame. Click **Test OCR** to also display the recognized text and confidence scores.
+4. **Test OCR**: Click **Test OCR** to display the left and right crops produced by the current boxes on the screenshot frame, along with recognized text and confidence scores.
 5. **Save to config**: Click **Save to config** to write the new `scoresheet` and relative `name_boxes` coordinates directly to `config.yaml` (or your active override file). The live configuration watcher applies the changes immediately.
 
 #### 2. OCR Preview (`/control`)
@@ -176,38 +94,7 @@ When match control is set to **Automated** and `ocr.enabled` is `true`, the Cont
 - Click **Refresh Preview** to display the current left and right name crops, recognized text, and confidence.
 - Click **Calibrate OCR Tool** to open the screenshot-based calibration page, where you can draw boxes and preview the crops before saving.
 
-#### Manual Configuration
-
-If you prefer editing `config.yaml` manually:
-
-1. Measure the scoreboard rectangle on your monitor: enter it as `ocr.capture_regions.scoresheet` (`x`, `y`, `width`, `height`).
-2. For each name, subtract the capture rectangle's screen `x` and `y` from the name rectangle's screen `x` and `y`. Enter those relative offsets as `ocr.name_boxes.left` and `ocr.name_boxes.right`:
-
-```yaml
-ocr:
-  capture_regions:
-    scoresheet:
-      x: 100
-      y: 50
-      width: 800
-      height: 100
-  name_boxes:
-    left:
-      x: 160
-      y: 20
-      width: 130
-      height: 45
-    right:
-      x: 400
-      y: 20
-      width: 130
-      height: 45
-```
-
-Both name boxes must fit completely inside the capture region.
-Keep each full wrestler name inside its box when possible, but avoid including the neighboring name or scoreboard labels. If the web player moves, resize it, or changes its layout, recalibrate the capture rectangle and name boxes.
-
-OCR waits for the configured number of consecutive reads before acting. Either wrestler's recognized name may be enough: recognized names are resolved through the API's Japanese-name dictionary, then the scanner selects a bout only if that name (or both names together) uniquely identifies one bout in the loaded basho, day, and division schedule. A single name that appears in more than one scheduled bout remains ambiguous and will not trigger a guess. The scanner will not machine-translate unknown names. Use `division: 0` to load every division when the broadcast can move between divisions. The automatic detector can identify the bout already on screen, so it also supports starting an offline replay in the middle of the schedule.
+OCR waits for the configured number of consecutive reads before acting. Either wrestler's recognized name may be enough: recognized names are resolved through the API's Japanese-name dictionary, then the scanner selects a bout only if that name (or both names together) uniquely identifies one bout in the loaded basho, day, and division schedule. A single name that appears in more than one scheduled bout remains ambiguous and will not trigger a guess.
 
 Japanese OCR can confuse similar-looking or uncommon kanji. If the Control page says the recognized names are not in the schedule, inspect the displayed OCR text and recalibrate the name boxes or improve the captured video size/clarity. Do not lower the confidence threshold just to force a match: the app only changes bouts after exact API dictionary resolution and a unique schedule match.
 
@@ -343,10 +230,10 @@ ocr:
 
 The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor`, `ocr.capture_regions.scoresheet`, or `overlay.scoreboard.width`, using their normal `config.yaml` structure.
 
-Start the app with the profile you want:
+Pass the option to the executable to use an override configuration file:
 
 ```powershell
-.\.venv\Scripts\python.exe app.py --override-config .\config.firefox.yaml
+.\SumoOverlay.exe --override-config .\config.firefox.yaml
 ```
 
 For a different layout, make another file such as `config.fullscreen.yaml` and pass that filename instead. Without `--override-config`, the app uses `config.yaml` alone. The main `config.yaml` can still be selected separately with `--config`.
@@ -355,27 +242,6 @@ For a different layout, make another file such as `config.fullscreen.yaml` and p
 
 `config.yaml` selects the HTML files for the main and pre-match overlays with `templates.main` and `templates.prematch`. By default these select the built-in pages in `templates`. To customize an overlay, copy its starter HTML file into `custom_templates`, edit the copy, and point the corresponding config value to its filename. The custom folder is searched before the built-in templates, and the Control/admin page remains unchanged. See [custom_templates/README.md](custom_templates/README.md) for step-by-step instructions.
 
-## Head-to-head and replay safety
+## Instructions for Developers
 
-The H2H card uses sumo-api.com's `/api/rikishi/{id}/matches/{opponentId}` data. It counts only completed meetings before the selected bout, including earlier matches in the same basho, and excludes the selected bout and later bouts so a replay does not reveal its result. The arrow history is ordered oldest to newest; green left arrows indicate wins by the wrestler on the left, and purple right arrows indicate wins by the wrestler on the right. Each wrestler's career record, winning percentage, and completed match count are calculated from their career match history, excluding the selected tournament day and later results. The higher career win percentage is bolded; career match counts, wrestling tenure, height, and weight are compared and bolded independently when the value is greater. Tied or unavailable values are not emphasized.
-
-The card also shows each wrestler's age, height, weight, stable (`heya`), and place of origin (`shusshin`) when available, with one labeled detail per line. Age is shown as completed years and months, rounded down, using the computer's current date. Wrestling tenure is calculated from the debut basho to the selected basho and shown in years and months. Height is shown in centimeters and feet/inches; weight is shown in kilograms and pounds. Profile details come from sumo-api.com's `/api/rikishi/{id}` endpoint and are cached for the running app. Stable, height, weight, and origin are the profile's latest values, not historical values from the selected replay date. Missing optional profile fields are omitted. If an API response is incomplete or malformed, the pre-match endpoint reports an error rather than presenting a misleading record.
-
-Basho records are calculated from completed earlier-day bouts and earlier bouts on the selected day. In the Control, main, and pre-match overlays, wins and losses counts are emphasized independently: 8 or more in Makuuchi and Juryo, and 4 or more in Makushita, Sandanme, Jonidan, and Jonokuchi. Emphasized counts are rendered larger, heavier, and brighter so they stand out. Official winners and winning techniques are not fetched from or sent by the schedule API; the Control page's manual winner buttons are temporary audience display overrides. If an earlier result is unavailable, the record is shown as unavailable rather than guessed.
-
-## Tests and saved API data
-
-Normal tests do not call sumo-api.com or load the OCR model. They use the checked-in API response snapshot at `tests/fixtures/sumo-api-202505-day1.json`, containing bout cards for all six divisions and a real H2H response. The sample sumo broadcast images in `tests/fixtures/ocr/` are local references for checking crop placement and calibrating OCR without accessing the live broadcast. The snapshot avoids network dependence and rate limits during routine test runs.
-
-Install test dependencies and run the tests with:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[test]"
-.\.venv\Scripts\python.exe -m pytest
-```
-
-To explicitly run the API snapshot test against live sumo-api.com instead, add `--live-api`:
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest --live-api
-```
+See [README_developer.md](README_developer.md) for detailed instructions on setting up the development environment, running tests, and building standalone releases.
