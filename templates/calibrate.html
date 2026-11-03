@@ -161,8 +161,8 @@
 
     <section class="result-box ocr-preview" aria-live="polite">
       <div class="ocr-preview-heading">
-        <h3>OCR Preview</h3>
-        <button id="refresh-ocr-preview" type="button" class="secondary">Refresh Preview</button>
+        <h3>OCR Test From Screenshot</h3>
+        <button id="btn-test" type="button" class="secondary">Test OCR</button>
       </div>
       <div class="result-row">
         <div class="result-cell">
@@ -181,23 +181,8 @@
     </section>
 
     <div class="actions">
-      <button id="btn-test" type="button" class="secondary">Test OCR</button>
       <button id="btn-save" type="button">Save to config</button>
       <span id="status-msg"></span>
-    </div>
-
-    <div class="result-box" id="result-box" style="display:none">
-      <h3>OCR Test Result (from screenshot)</h3>
-      <div class="result-row">
-        <div class="result-cell">
-          <div>Left: <strong id="res-left"></strong> <span id="res-left-conf" style="color:var(--overlay-muted-color)"></span></div>
-          <div class="result-thumb"><img id="res-left-img" alt="Left crop" style="display:none"></div>
-        </div>
-        <div class="result-cell">
-          <div>Right: <strong id="res-right"></strong> <span id="res-right-conf" style="color:var(--overlay-muted-color)"></span></div>
-          <div class="result-thumb"><img id="res-right-img" alt="Right crop" style="display:none"></div>
-        </div>
-      </div>
     </div>
   </main>
 
@@ -580,53 +565,17 @@
       }
     }
 
-    document.getElementById("refresh-ocr-preview").addEventListener("click", event => {
+    document.getElementById("btn-test").addEventListener("click", event => {
       const button = event.currentTarget;
       button.disabled = true;
-      setStatus("Refreshing preview…", "");
-      runOcrPreview()
-        .then(payload => {
-          renderOcrPreview(payload);
-          setStatus("Preview updated.", "ok");
-        })
-        .catch(error => setStatus(`Preview failed: ${error.message}`, "err"))
-        .finally(() => button.disabled = false);
-    });
-
-    // ── Test OCR ──────────────────────────────────────────────────────────────
-    document.getElementById("btn-test").addEventListener("click", () => {
       setStatus("Running OCR on screenshot…", "");
-      document.getElementById("result-box").style.display = "none";
       runOcrPreview()
         .then(payload => {
           renderOcrPreview(payload);
-          document.getElementById("res-left").textContent = payload.left || "(empty)";
-          document.getElementById("res-right").textContent = payload.right || "(empty)";
-          document.getElementById("res-left-conf").textContent =
-            payload.leftConfidence != null ? ` (${Math.round(payload.leftConfidence * 100)}%)` : "";
-          document.getElementById("res-right-conf").textContent =
-            payload.rightConfidence != null ? ` (${Math.round(payload.rightConfidence * 100)}%)` : "";
-
-          const leftImgEl = document.getElementById("res-left-img");
-          if (payload.leftImage) {
-            leftImgEl.src = "data:image/png;base64," + payload.leftImage;
-            leftImgEl.style.display = "block";
-          } else {
-            leftImgEl.style.display = "none";
-          }
-
-          const rightImgEl = document.getElementById("res-right-img");
-          if (payload.rightImage) {
-            rightImgEl.src = "data:image/png;base64," + payload.rightImage;
-            rightImgEl.style.display = "block";
-          } else {
-            rightImgEl.style.display = "none";
-          }
-
-          document.getElementById("result-box").style.display = "";
           setStatus("OCR test complete.", "ok");
         })
-        .catch(err => setStatus(`OCR test failed: ${err.message}`, "err"));
+        .catch(err => setStatus(`OCR test failed: ${err.message}`, "err"))
+        .finally(() => button.disabled = false);
     });
 
     // ── Save to config ─────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +9,13 @@ import yaml
 
 import app as app_module
 from app import create_app
-from config import SettingsError, default_settings, load_settings, validate_settings
+from config import (
+    SettingsError,
+    default_settings,
+    initialize_config_file,
+    load_settings,
+    validate_settings,
+)
 from sumo_data import DIVISION_ORDER, Bout, BoutRecord, BoutSide, SumoApiError
 
 
@@ -449,13 +456,13 @@ def test_control_updates_persist_to_the_layer_that_defines_the_setting(tmp_path)
 
         assert response.status_code == 200
         assert response.json["settings"]["preMatchSalariedSeconds"] == 45
-        assert response.json["settings"]["preMatchUnsalariedSeconds"] == 10
+        assert response.json["settings"]["preMatchUnsalariedSeconds"] == 20
         assert yaml.safe_load(override_path.read_text(encoding="utf-8")) == {
             "control": {"pre_match_salaried_seconds": 45}
         }
         assert yaml.safe_load(settings_path.read_text(encoding="utf-8"))["control"][
             "pre_match_salaried_seconds"
-        ] == 10
+        ] == 30
     finally:
         app.extensions["settings_watcher"].stop()
 
@@ -741,6 +748,13 @@ def test_overlay_dimensions_are_positive_integers_and_reject_position_settings()
 
 def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     settings = default_settings()
+    assert settings["basho_id"] == "202609"
+    assert settings["control"] == {
+        "mode": "automated",
+        "pre_match_salaried_seconds": 30,
+        "pre_match_unsalaried_seconds": 20,
+        "pre_match_pinned": False,
+    }
     assert settings["overlay"]["control"]["font_sizes"] == {
         "text": 28,
         "muted": 36,
@@ -753,7 +767,7 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     assert settings["overlay"]["scoreboard"]["font_sizes"] == {
         "text": 45,
         "muted": 36,
-        "accent": 36,
+        "accent": 46,
         "current_score": 36,
         "result": 40,
     }
@@ -761,7 +775,7 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
         "text": 88,
         "muted": 36,
         "accent": 54,
-        "current_score": 54,
+        "current_score": 38,
         "result": 60,
     }
 
@@ -896,7 +910,7 @@ def test_numeric_division_is_converted_to_api_division_name(tmp_path, monkeypatc
 
     create_app(config_path=settings_path, watch_config=False)
 
-    assert calls == [("202505", "Makushita", 1)]
+    assert calls == [("202609", "Makushita", 1)]
 
 
 def test_division_jump_moves_to_first_bout_in_requested_division():
@@ -936,6 +950,162 @@ def write_config(path, settings):
     path.write_text(
         yaml.safe_dump(settings, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
+    )
+
+
+def test_initialize_config_file_creates_missing_config_from_python_defaults(tmp_path):
+    config_path = tmp_path / "config.yaml"
+
+    initialize_config_file(config_path, logging.getLogger())
+
+    assert yaml.safe_load(config_path.read_text(encoding="utf-8")) == default_settings()
+
+
+def test_manual_defaults_disable_ocr():
+    settings = default_settings(enable_ocr=False)
+
+    assert settings["control"]["mode"] == "manual"
+    assert settings["ocr"]["enabled"] is False
+
+
+def test_initialize_config_file_creates_manual_defaults_when_ocr_disabled(tmp_path):
+    config_path = tmp_path / "config.yaml"
+
+    initialize_config_file(config_path, logging.getLogger(), enable_ocr=False)
+
+    assert yaml.safe_load(config_path.read_text(encoding="utf-8")) == default_settings(
+        enable_ocr=False
+    )
+
+
+def test_initialize_config_file_adds_missing_values_without_replacing_user_values(
+    tmp_path,
+):
+    base_settings = default_settings()
+    config_path = tmp_path / "config.yaml"
+    write_config(
+        config_path,
+        {
+            "basho_id": "202609",
+            "control": {"mode": "automated"},
+            "overlay": {"scoreboard": {"width": 1200}},
+        },
+    )
+
+    initialize_config_file(config_path, logging.getLogger())
+
+    migrated = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert migrated["basho_id"] == "202609"
+    assert migrated["control"]["mode"] == "automated"
+    assert migrated["control"]["pre_match_salaried_seconds"] == base_settings[
+        "control"
+    ]["pre_match_salaried_seconds"]
+    assert migrated["api"]["timeout_seconds"] == base_settings["api"]["timeout_seconds"]
+    assert migrated["overlay"]["scoreboard"]["width"] == 1200
+    assert migrated["overlay"]["scoreboard"]["height"] == base_settings["overlay"][
+        "scoreboard"
+    ]["height"]
+
+
+def test_initialize_config_file_leaves_up_to_date_config_text_unchanged(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    base_settings = default_settings()
+    config_text = "# Keep user comments.\n" + yaml.safe_dump(
+        base_settings, allow_unicode=True, sort_keys=False
+    )
+    config_path.write_text(config_text, encoding="utf-8")
+
+    initialize_config_file(config_path, logging.getLogger())
+
+    assert config_path.read_text(encoding="utf-8") == config_text
+
+
+def test_initialize_config_file_removes_only_explicitly_deprecated_values(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    user_settings = default_settings()
+    user_settings["control"]["old_setting"] = True
+    write_config(config_path, user_settings)
+
+    initialize_config_file(
+        config_path,
+        logging.getLogger(),
+        deprecated_paths=(("control", "old_setting"),),
+    )
+
+    migrated = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert "old_setting" not in migrated["control"]
+
+    user_settings["control"]["unknown_setting"] = True
+    write_config(config_path, user_settings)
+    with pytest.raises(SettingsError, match="Unknown control setting"):
+        initialize_config_file(config_path, logging.getLogger())
+    assert yaml.safe_load(config_path.read_text(encoding="utf-8")) == user_settings
+
+
+@pytest.mark.parametrize(
+    ("enable_ocr", "expected_mode", "expected_ocr"),
+    [(True, "automated", True), (False, "manual", False)],
+)
+def test_frozen_main_initializes_variant_defaults_and_leaves_custom_config(
+    monkeypatch, tmp_path, enable_ocr, expected_mode, expected_ocr
+):
+    class FakeSocketIO:
+        def run(self, *args, **kwargs):
+            return None
+
+    fake_app = SimpleNamespace(
+        extensions={
+            "settings_watcher": SimpleNamespace(snapshot=default_settings),
+            "socketio": FakeSocketIO(),
+        }
+    )
+    monkeypatch.setattr(app_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app_module.sys, "executable", str(tmp_path / "SumoOverlay.exe"))
+    monkeypatch.setattr(app_module, "DEFAULT_CONFIG_PATH", tmp_path / "config.yaml")
+    monkeypatch.setattr(app_module.sys, "argv", ["SumoOverlay.exe"])
+    monkeypatch.setattr(app_module, "create_app", lambda **kwargs: fake_app)
+
+    app_module.main(enable_ocr=enable_ocr)
+
+    generated_settings = yaml.safe_load(
+        (tmp_path / "config.yaml").read_text(encoding="utf-8")
+    )
+    assert generated_settings["control"]["mode"] == expected_mode
+    assert generated_settings["ocr"]["enabled"] is expected_ocr
+
+    custom_config_path = tmp_path / "custom.yaml"
+    monkeypatch.setattr(
+        app_module.sys,
+        "argv",
+        ["SumoOverlay.exe", "--config", str(custom_config_path)],
+    )
+
+    app_module.main(enable_ocr=False)
+
+    assert not custom_config_path.exists()
+
+
+def test_python_main_initializes_missing_default_config(monkeypatch, tmp_path):
+    class FakeSocketIO:
+        def run(self, *args, **kwargs):
+            return None
+
+    fake_app = SimpleNamespace(
+        extensions={
+            "settings_watcher": SimpleNamespace(snapshot=default_settings),
+            "socketio": FakeSocketIO(),
+        }
+    )
+    config_path = tmp_path / "config.yaml"
+    monkeypatch.setattr(app_module.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(app_module, "DEFAULT_CONFIG_PATH", config_path)
+    monkeypatch.setattr(app_module.sys, "argv", ["app.py"])
+    monkeypatch.setattr(app_module, "create_app", lambda **kwargs: fake_app)
+
+    app_module.main(enable_ocr=False)
+
+    assert yaml.safe_load(config_path.read_text(encoding="utf-8")) == default_settings(
+        enable_ocr=False
     )
 
 
@@ -1038,8 +1208,8 @@ def test_control_mode_is_persisted_to_yaml_config(tmp_path):
         saved_settings = yaml.safe_load(settings_path.read_text(encoding="utf-8"))
         assert response.status_code == 200
         assert response.json["settings"]["mode"] == "automated"
-        assert response.json["settings"]["preMatchSalariedSeconds"] == 10
-        assert response.json["settings"]["preMatchUnsalariedSeconds"] == 10
+        assert response.json["settings"]["preMatchSalariedSeconds"] == 30
+        assert response.json["settings"]["preMatchUnsalariedSeconds"] == 20
         assert saved_settings["control"]["mode"] == "automated"
         assert set(saved_settings["control"]) == {
             "mode",
@@ -1088,10 +1258,10 @@ def test_basho_data_settings_update_a_subset_or_all_fields(tmp_path):
             "/api/control/data-settings", json={"day": 7}
         )
         assert day_response.status_code == 200
-        assert day_response.json["settings"]["bashoId"] == "202505"
+        assert day_response.json["settings"]["bashoId"] == "202609"
         assert day_response.json["settings"]["division"] == 0
         assert day_response.json["settings"]["day"] == 7
-        assert schedule_settings[-1] == ("202505", 0, 7)
+        assert schedule_settings[-1] == ("202609", 0, 7)
 
         two_fields_response = client.post(
             "/api/control/data-settings",
@@ -1225,7 +1395,7 @@ def test_invalid_hot_reload_keeps_last_good_configuration(tmp_path):
                 break
             time.sleep(0.05)
         assert response["reloadError"]
-        assert response["settings"]["control"]["mode"] == "manual"
+        assert response["settings"]["control"]["mode"] == "automated"
     finally:
         app.extensions["settings_watcher"].stop()
 
@@ -1311,7 +1481,7 @@ def test_pre_match_duration_settings_are_independent_per_division_group(tmp_path
         assert off.status_code == 200
         assert off.json["settings"]["mode"] == "manual"
         assert off.json["settings"]["preMatchSalariedSeconds"] == 0
-        assert off.json["settings"]["preMatchUnsalariedSeconds"] == 10
+        assert off.json["settings"]["preMatchUnsalariedSeconds"] == 20
 
         on = client.post(
             "/api/control/pre-match",
@@ -1391,9 +1561,12 @@ def test_overlay_background_color_is_bound_in_templates_and_css():
     assert 'root.style.setProperty("--overlay-background-color", style.colors.background);' in prematch_html
 
 
-def test_calibrate_page_renders_template():
+def test_calibrate_page_renders_template(tmp_path):
+    settings_path = tmp_path / "config.yaml"
+    write_config(settings_path, default_settings())
     app = create_app(
         schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
         test_config={"TESTING": True},
         watch_config=False,
     )
@@ -1401,9 +1574,14 @@ def test_calibrate_page_renders_template():
     response = client.get("/calibrate")
     assert response.status_code == 200
     assert b"OCR Calibration" in response.data
+    assert b"OCR Test From Screenshot" in response.data
     assert b"Left name crop" in response.data
     assert b"Right name crop" in response.data
-    assert b"Refresh Preview" in response.data
+    assert b"Test OCR" in response.data
+    assert b"Refresh Preview" not in response.data
+    assert b"OCR Test Result (from screenshot)" not in response.data
+    assert b'id="result-box"' not in response.data
+    assert response.text.count('id="btn-test"') == 1
     assert b"runOcrPreview()" in response.data
     page = response.text
     assert page.index('class="coords-grid"') < page.index(

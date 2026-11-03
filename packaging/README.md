@@ -66,6 +66,10 @@ builds clean one-folder applications, and creates ZIP archives:
 - `dist\SumoOverlay\` and `dist\SumoOverlay.zip`
 - `dist\SumoOverlay-NoOCR\` and `dist\SumoOverlay-NoOCR.zip`
 
+At startup, each executable generates its `config.yaml` from the defaults
+embedded in `config.py`. The no-OCR executable selects manual mode and disables
+OCR when creating a missing config.
+
 To use another Python 3.11 build environment, pass its Python executable:
 
 ```powershell
@@ -111,11 +115,17 @@ total release-asset size or bandwidth limit. See
 
 Test each release from its extracted folder, not from the project checkout.
 Run `SumoOverlay.exe` or `SumoOverlay-NoOCR.exe` and keep its console window
-open while the overlays are in use. The server address and port come from the
-included `config.yaml`. Open `http://127.0.0.1:5000/control` in a browser. Use
-**Ctrl+C** in the console window to stop the server.
+open while the overlays are in use. On first launch, the app creates
+`config.yaml` beside the executable from the defaults embedded in `config.py`.
+The server address and port come from `config.yaml`. Open
+`http://127.0.0.1:5000/control` in a browser. Use **Ctrl+C** in the console
+window to stop the server.
 
 The `config.yaml` beside the executable is the live, editable configuration.
+When updating an existing release, keep that file and extract the new release
+over the existing folder (or copy the file into a newly extracted folder).
+Startup adds settings missing from older configs while preserving existing
+values; it removes only settings explicitly marked as deprecated by the app.
 The no-OCR release starts with manual controls and OCR disabled. Do not move
 only the `.exe`; keep the whole extracted folder together. Distribute the ZIP
 for the desired variant.

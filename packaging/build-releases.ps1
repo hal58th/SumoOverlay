@@ -76,26 +76,12 @@ function Build-Release {
         throw "PyInstaller failed while building $Name."
     }
 
-    Copy-Item -LiteralPath "LICENSE", "config.vlc.yaml",
-        "ocr_guide_tight_capture.png" `
+    Copy-Item -LiteralPath "LICENSE", "ocr_guide_tight_capture.png" `
         -Destination $ReleaseDirectory
     Copy-Item -LiteralPath "custom_templates" -Destination $ReleaseDirectory -Recurse
 
-    if ($IncludeOcr) {
-        Copy-Item -LiteralPath "config.yaml" -Destination $ReleaseDirectory
-    }
-    else {
-        $ConfigureManualSettings = Join-Path $PSScriptRoot "configure_manual_config.py"
-        & $Python $ConfigureManualSettings "config.yaml" (Join-Path $ReleaseDirectory "config.yaml")
-        if ($LASTEXITCODE -ne 0) {
-            throw "Could not create the manual-mode configuration for $Name."
-        }
-    }
-
     Copy-Item -LiteralPath "README.md" `
         -Destination (Join-Path $ReleaseDirectory "README.md")
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "README.md") `
-        -Destination (Join-Path $ReleaseDirectory "BUILDING.md")
     Compress-Archive -Path (Join-Path $ReleaseDirectory "*") -DestinationPath $ArchivePath
     Write-Host "Created $ReleaseDirectory and $ArchivePath"
 }
