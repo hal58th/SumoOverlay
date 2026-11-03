@@ -19,6 +19,13 @@ from config import (
 from sumo_data import DIVISION_ORDER, Bout, BoutRecord, BoutSide, SumoApiError
 
 
+@pytest.fixture(autouse=True)
+def isolate_default_config(monkeypatch, tmp_path):
+    config_path = tmp_path / "app-default-config.yaml"
+    monkeypatch.setattr(app_module, "DEFAULT_CONFIG_PATH", config_path)
+    initialize_config_file(config_path, logging.getLogger("tests"))
+
+
 def test_frozen_application_uses_executable_directory(monkeypatch, tmp_path):
     executable = tmp_path / "SumoOverlay.exe"
     monkeypatch.setattr(app_module.sys, "frozen", True, raising=False)
