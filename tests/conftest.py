@@ -41,6 +41,11 @@ def pytest_addoption(parser):
         default=False,
         help="Use sumo-api.com instead of the saved local API snapshot",
     )
+    parser.addoption(
+        "--basho",
+        default="202505",
+        help="Basho ID to use for live-API tests (default: 202505)",
+    )
 
 
 @pytest.fixture
@@ -49,3 +54,9 @@ def sumo_api_client(request):
         return SumoApiClient()
     with FIXTURE_PATH.open("r", encoding="utf-8") as fixture_file:
         return SnapshotSumoApiClient(json.load(fixture_file))
+
+
+@pytest.fixture
+def live_basho_id(request):
+    """The basho ID to use for live-API smoke tests (set with --basho)."""
+    return request.config.getoption("--basho")

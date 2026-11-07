@@ -102,6 +102,12 @@ def _required_text(value: Any, label: str) -> str:
 
 def _parse_matches(payload: dict[str, Any], day: int) -> list[dict[str, Any]]:
     matches = payload.get("torikumi")
+    # A missing or null torikumi key means the division schedule is not yet
+    # published (e.g. an upcoming basho whose lower-division bouts haven't
+    # been entered yet).  Treat it as an empty list so callers can skip the
+    # division gracefully rather than aborting the whole load.
+    if matches is None:
+        return []
     if not isinstance(matches, list):
         raise SumoApiError(f"sumo-api.com returned no torikumi list for day {day}")
 
@@ -136,12 +142,16 @@ def build_bouts(
         known.setdefault(east_id, True)
         known.setdefault(west_id, True)
 
-        if match.get("winnerId") is None:
+        raw_winner = match.get("winnerId")
+        # sumo-api.com uses 0 (integer zero) for not-yet-played bouts in
+        # an upcoming basho, in addition to the standard null/None used for
+        # completed bashos with unknown outcomes.
+        if raw_winner is None or raw_winner == 0:
             known[east_id] = False
             known[west_id] = False
             return
 
-        winner_id = _required_int(match.get("winnerId"), "winner ID")
+        winner_id = _required_int(raw_winner, "winner ID")
         if winner_id == east_id:
             wins[east_id] = wins.get(east_id, 0) + 1
             losses[west_id] = losses.get(west_id, 0) + 1
@@ -300,12 +310,16 @@ class SumoApiClient:
         payload = self._get_json(
             f"{self.base_url}/rikishi/{rikishi_id}/matches/{opponent_id}"
         )
-        matches = payload.get("matches")
-        if not isinstance(matches, list) or any(not isinstance(match, dict) for match in matches):
-            raise SumoApiError("sumo-api.com returned an invalid head-to-head match list")
         total = payload.get("total")
         if isinstance(total, bool) or not isinstance(total, int) or total < 0:
             raise SumoApiError("sumo-api.com returned an invalid head-to-head match count")
+        matches = payload.get("matches")
+        # sumo-api.com returns "matches": null when total is 0 (wrestlers have
+        # never met before).  Treat null + total=0 as an empty list.
+        if matches is None and total == 0:
+            return []
+        if not isinstance(matches, list) or any(not isinstance(match, dict) for match in matches):
+            raise SumoApiError("sumo-api.com returned an invalid head-to-head match list")
         if total > len(matches):
             raise SumoApiError(
                 "sumo-api.com returned only part of the head-to-head history; "
@@ -339,7 +353,10 @@ class BashoSchedule:
         self._current_day = self._fetch_day(day)
         self._bouts = build_bouts(self._prior_days, self._current_day)
         if not self._bouts:
-            raise SumoApiError(f"No bouts were returned for {division}, day {day}")
+            raise SumoApiError(
+                f"No bouts were returned for {division or 'any division'}, day {day}. "
+                "The schedule may not be published yet for this basho and division."
+            )
         self._profile_ids = sorted(_participant_ids(self._current_day))
         self._kanji_lookup: dict[str, str] | None = None
         self._kanji_id_lookup: dict[str, int] | None = None
@@ -377,6 +394,10 @@ class BashoSchedule:
             self._kanji_lookup = None
             self._kanji_id_lookup = None
         if self._kanji_lookup is None or self._kanji_id_lookup is None:
+            if not self._profile_ids:
+                self._kanji_lookup = {}
+                self._kanji_id_lookup = {}
+                return
             with ThreadPoolExecutor(
                 max_workers=min(8, len(self._profile_ids))
             ) as executor:
@@ -400,7 +421,10 @@ class BashoSchedule:
         current_day = self._fetch_day(self.day)
         bouts = build_bouts(self._prior_days, current_day)
         if not bouts:
-            raise SumoApiError(f"No bouts were returned for {self.division}, day {self.day}")
+            raise SumoApiError(
+                f"No bouts were returned for {self.division or 'any division'}, day {self.day}. "
+                "The schedule may not be published yet for this basho and division."
+            )
         self._current_day = current_day
         self._bouts = bouts
         return self._bouts
