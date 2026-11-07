@@ -64,6 +64,66 @@ def test_winner_must_be_a_bout_participant():
         build_bouts([], [match(1, 1, 2, winner_id=3)])
 
 
+def test_winner_id_zero_means_no_result_yet():
+    """sumo-api.com uses winnerId=0 for upcoming bouts; treat it like null."""
+    today = [match(1, 1, 2, winner_id=0), match(2, 3, 4, winner_id=0)]
+    bouts = build_bouts([], today)
+
+    assert len(bouts) == 2
+    # Records should show 0-0 going into the first day — no history yet.
+    assert bouts[0].east.record == BoutRecord(wins=0, losses=0)
+    assert bouts[0].west.record == BoutRecord(wins=0, losses=0)
+    # Crucially, no SumoApiError should have been raised for winner_id=0.
+
+
+def test_winner_id_zero_on_prior_day_hides_record_on_current_day():
+    """Prior-day bouts with winnerId=0 (upcoming basho) hide the record."""
+    prior = [match(1, 1, 2, winner_id=0)]
+    today = [match(1, 1, 2, winner_id=0)]
+    bouts = build_bouts([prior], today)
+
+    assert bouts[0].east.record is None
+    assert bouts[0].west.record is None
+
+
+def test_missing_torikumi_key_is_treated_as_empty_division():
+    """Divisions not yet published return a payload without a torikumi key."""
+    from sumo_data import SumoApiClient, _parse_matches
+
+    # _parse_matches should return [] rather than raise
+    result = _parse_matches({"date": "2026-11-01", "startDate": "...", "endDate": "..."}, day=1)
+    assert result == []
+
+
+def test_schedule_loads_when_some_divisions_have_no_torikumi():
+    """In 'all divisions' mode, unpopulated divisions are silently skipped."""
+
+    class PartialClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            if division in ("Juryo", "Makuuchi"):
+                return [
+                    {
+                        **match(1, 1, 2, winner_id=0),
+                        "division": division,
+                        "bashoId": basho_id,
+                        "day": day,
+                    }
+                ]
+            # Other divisions not yet published — return empty (simulating
+            # the missing torikumi key path that now returns [])
+            return []
+
+    client = PartialClient()
+    # None = all divisions
+    schedule = BashoSchedule(client, "202611", None, 1)
+
+    # Only Juryo and Makuuchi matches should be present
+    assert len(schedule.bouts) == 2
+    divisions_seen = {bout.division for bout in schedule.bouts}
+    assert "Juryo" in divisions_seen
+    assert "Makuuchi" in divisions_seen
+
+
 def test_kanji_lookup_maps_api_names_and_drops_ambiguous_keys():
     lookup = build_kanji_lookup(
         [
@@ -495,3 +555,51 @@ def test_api_client_rejects_partial_h2h_history():
 
     with pytest.raises(SumoApiError, match="only part"):
         client.fetch_head_to_head(19, 8850)
+
+
+@pytest.fixture(autouse=False)
+def _require_live_api(request):
+    if not request.config.getoption("--live-api"):
+        pytest.skip("requires --live-api")
+
+
+def test_live_api_loads_all_divisions_for_any_basho(live_basho_id, _require_live_api):
+    """Smoke-test that BashoSchedule loads cleanly for the given --basho.
+
+    Works for both completed bashos (winners known) and upcoming bashos
+    (winnerId=0, some divisions may not be published yet).
+    """
+    client = SumoApiClient()
+    schedule = BashoSchedule(client, live_basho_id, None, 1)
+
+    assert len(schedule.bouts) > 0, "Expected at least one bout"
+    divisions_seen = {bout.division for bout in schedule.bouts}
+    # At minimum the top two divisions should be published well before the basho.
+    salaried = {"Juryo", "Makuuchi"}
+    assert salaried & divisions_seen, (
+        f"Expected at least one salaried division; got: {divisions_seen}"
+    )
+    # Every bout must have valid east/west participants.
+    for bout in schedule.bouts:
+        assert bout.east.rikishi_id > 0
+        assert bout.west.rikishi_id > 0
+        assert bout.east.name
+        assert bout.west.name
+
+
+def test_api_client_accepts_null_matches_when_total_is_zero():
+    """sumo-api.com returns "matches": null with total=0 for first-time pairings."""
+
+    class NullMatchesResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"matches": None, "total": 0}
+
+    class NullMatchesSession:
+        def get(self, url, timeout):
+            return NullMatchesResponse()
+
+    result = SumoApiClient(session=NullMatchesSession()).fetch_head_to_head(77, 9099)
+    assert result == []
