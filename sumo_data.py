@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from threading import local
+from threading import Lock, local
 from typing import Any, TypeVar
 from urllib.parse import quote
 
@@ -247,7 +247,7 @@ class SumoApiClient:
     def __init__(
         self,
         base_url: str = "https://sumo-api.com/api",
-        timeout: float = 10.0,
+        timeout: float = 30.0,
         session: requests.Session | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -291,14 +291,18 @@ class SumoApiClient:
 
     def fetch_rikishi_matches(self, rikishi_id: int) -> list[dict[str, Any]]:
         payload = self._get_json(f"{self.base_url}/rikishi/{rikishi_id}/matches")
+        total = payload.get("total")
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise SumoApiError("sumo-api.com returned an invalid rikishi match count")
         matches = payload.get("records")
+        # When a rikishi has 0 career matches (e.g. debutants), sumo-api.com
+        # returns "records": null with total=0. Treat this as an empty list.
+        if matches is None and total == 0:
+            return []
         if not isinstance(matches, list) or any(
             not isinstance(match, dict) for match in matches
         ):
             raise SumoApiError("sumo-api.com returned an invalid rikishi match list")
-        total = payload.get("total")
-        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
-            raise SumoApiError("sumo-api.com returned an invalid rikishi match count")
         if total > len(matches):
             raise SumoApiError(
                 "sumo-api.com returned only part of the rikishi match history; "
@@ -344,6 +348,7 @@ class BashoSchedule:
         self.day = day
         self._divisions = DIVISION_ORDER if division is None else (division,)
         self._h2h_cache: dict[tuple[int, int], list[dict[str, Any]]] = {}
+        self._h2h_cache_lock = Lock()
         self._rikishi_cache: dict[int, dict[str, Any]] = {}
         self._career_matches_cache: dict[int, list[dict[str, Any]]] = {}
         self._prior_days = [
@@ -499,8 +504,9 @@ class BashoSchedule:
             min(bout.east.rikishi_id, bout.west.rikishi_id),
             max(bout.east.rikishi_id, bout.west.rikishi_id),
         )
-        if pair not in self._h2h_cache:
-            self._h2h_cache[pair] = self.client.fetch_head_to_head(*pair)
+        with self._h2h_cache_lock:
+            if pair not in self._h2h_cache:
+                self._h2h_cache[pair] = self.client.fetch_head_to_head(*pair)
 
         target = (
             self.basho_id,

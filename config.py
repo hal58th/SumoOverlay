@@ -67,7 +67,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "basho_id": "202609",
     "division": ALL_DIVISIONS,
     "day": 1,
-    "api": {"base_url": "https://sumo-api.com/api", "timeout_seconds": 15},
+    "api": {"base_url": "https://sumo-api.com/api", "timeout_seconds": 30},
     "server": {
         "host": "127.0.0.1",
         "port": 5000,
