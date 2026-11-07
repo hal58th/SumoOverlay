@@ -1,4 +1,5 @@
-from threading import Barrier
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event
 
 import pytest
 import requests
@@ -479,6 +480,50 @@ def test_head_to_head_history_is_oldest_first_and_excludes_future_matches():
     }
 
 
+def test_head_to_head_fetch_is_cached_per_pair_across_repeated_and_concurrent_reads():
+    class FakeClient:
+        def __init__(self):
+            self.fetch_calls = []
+            self.fetch_started = Event()
+            self.second_fetch_started = Event()
+            self.release_fetch = Event()
+
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2), match(2, 3, 4)]
+
+        def fetch_head_to_head(self, rikishi_id, opponent_id):
+            self.fetch_calls.append((rikishi_id, opponent_id))
+            if len(self.fetch_calls) == 1:
+                self.fetch_started.set()
+                self.release_fetch.wait(timeout=2)
+            else:
+                self.second_fetch_started.set()
+            return []
+
+    client = FakeClient()
+    schedule = BashoSchedule(client, "202505", "Makuuchi", 1)
+    first_bout, next_bout = schedule.bouts
+    ready = Barrier(2)
+
+    def fetch_first_bout():
+        ready.wait(timeout=2)
+        return schedule.head_to_head(first_bout)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        reads = [executor.submit(fetch_first_bout) for _ in range(2)]
+        assert client.fetch_started.wait(timeout=2)
+        assert not client.second_fetch_started.wait(timeout=0.05)
+        client.release_fetch.set()
+        assert [read.result(timeout=2) for read in reads] == [
+            {"eastWins": 0, "westWins": 0, "total": 0, "history": []},
+            {"eastWins": 0, "westWins": 0, "total": 0, "history": []},
+        ]
+
+    assert schedule.head_to_head(first_bout)["total"] == 0
+    assert schedule.head_to_head(next_bout)["total"] == 0
+    assert client.fetch_calls == [(1, 2), (3, 4)]
+
+
 def test_live_api_client_targets_documented_h2h_route():
     class CapturedResponse:
         def raise_for_status(self):
@@ -602,4 +647,22 @@ def test_api_client_accepts_null_matches_when_total_is_zero():
             return NullMatchesResponse()
 
     result = SumoApiClient(session=NullMatchesSession()).fetch_head_to_head(77, 9099)
+    assert result == []
+
+
+def test_api_client_accepts_null_records_when_total_is_zero():
+    """sumo-api.com returns "records": null with total=0 for debutant rikishi."""
+
+    class NullRecordsResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"limit": 0, "skip": 0, "total": 0, "records": None}
+
+    class NullRecordsSession:
+        def get(self, url, timeout):
+            return NullRecordsResponse()
+
+    result = SumoApiClient(session=NullRecordsSession()).fetch_rikishi_matches(9152)
     assert result == []

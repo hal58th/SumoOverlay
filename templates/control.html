@@ -272,6 +272,7 @@
       container.append(wins, document.createTextNode("-"), losses);
     }
     function renderBout(state) {
+      if (!state || state.error || !state.east || !state.west) return;
       document.getElementById("bout-number").textContent =
         `BOUT ${state.matchNo} · ${state.index + 1}/${state.total}`;
       const nextStage = document.getElementById("bouts-until-next-stage");
@@ -462,8 +463,11 @@
       .then(renderBout)
       .catch(error => document.getElementById("error").textContent = error.message);
     fetch("/api/pre-match-state")
-      .then(response => response.json())
-      .then(renderBout)
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Unable to load pre-match state");
+        renderBout(payload);
+      })
       .catch(error => console.error(error));
     document.getElementById("prev").addEventListener("click", () => move("prev"));
     document.getElementById("next").addEventListener("click", () => move("next"));
