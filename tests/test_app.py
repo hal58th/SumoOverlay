@@ -288,6 +288,8 @@ def test_pages_and_kanji_lookup_are_available():
     assert '"--overlay-current-score-color"' in scoreboard_overlay.text
     assert 'wins.classList.toggle("announced-result", announcedWinner === side);' in scoreboard_overlay.text
     assert 'state.announcedWinner' in scoreboard_overlay.text
+    assert '"--overlay-border-width"' in scoreboard_overlay.text
+    assert '"--overlay-border-color"' in scoreboard_overlay.text
     main_styles = client.get("/static/overlay.css").text.split(
         ".pre-match-card {", maxsplit=1
     )[0]
@@ -318,6 +320,12 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'preMatchOverlay.style.width = `${width}px`;' in pre_match_html
     assert "preMatchOverlay.style.setProperty(\"--pre-match-opacity\", String(opacity));" in pre_match_html
     assert "fitNameToWidth" not in pre_match_html
+    assert '"--prematch-border-width"' in pre_match_html
+    assert '"--prematch-border-color"' in pre_match_html
+    assert "--prematch-border-width: 1px;" in all_styles
+    assert "--prematch-border-style: solid;" in all_styles
+    assert "--overlay-border-width: 0px;" in all_styles
+    assert "--overlay-border-style: none;" in all_styles
     assert "rgb(20 25 34 / var(--pre-match-opacity, 0.5))" in all_styles
     assert "rgb(37 42 51 / var(--pre-match-opacity, 0.5))" in all_styles
     control = client.get("/control")
@@ -845,6 +853,95 @@ def test_pre_match_opacity_accepts_values_from_zero_through_one(opacity):
     settings["overlay"]["prematch"]["opacity"] = opacity
 
     assert validate_settings(settings)["overlay"]["prematch"]["opacity"] == opacity
+
+
+def test_scoreboard_and_prematch_border_defaults():
+    settings = default_settings()
+    assert settings["overlay"]["scoreboard"]["border"] == {
+        "width": 0,
+        "color": "#ffffff38",
+    }
+    assert settings["overlay"]["prematch"]["border"] == {
+        "width": 1,
+        "color": "#ffffff33",
+    }
+
+
+def test_scoreboard_and_prematch_border_customization():
+    settings = default_settings()
+    settings["overlay"]["scoreboard"]["border"] = {
+        "width": 3,
+        "color": "#ff0000",
+    }
+    settings["overlay"]["prematch"]["border"] = {
+        "thickness": 4,
+        "color": "#00ff00",
+    }
+    validated = validate_settings(settings)
+    assert validated["overlay"]["scoreboard"]["border"] == {
+        "width": 3,
+        "color": "#ff0000",
+    }
+    assert validated["overlay"]["prematch"]["border"] == {
+        "width": 4,
+        "color": "#00ff00",
+    }
+
+
+@pytest.mark.parametrize(
+    "border_value",
+    [
+        {"width": 0},
+        {"thickness": 0},
+        {"enabled": False},
+        False,
+        0,
+        "none",
+        "off",
+    ],
+)
+def test_overlay_border_can_be_turned_off_completely(border_value):
+    settings = default_settings()
+    settings["overlay"]["prematch"]["border"] = border_value
+    validated = validate_settings(settings)
+    assert validated["overlay"]["prematch"]["border"]["width"] == 0
+
+
+def test_scoreboard_border_can_be_enabled_and_customized():
+    settings = default_settings()
+    settings["overlay"]["scoreboard"]["border"] = True
+    validated = validate_settings(settings)
+    assert validated["overlay"]["scoreboard"]["border"]["width"] == 1
+
+    settings["overlay"]["scoreboard"]["border"] = 2
+    validated = validate_settings(settings)
+    assert validated["overlay"]["scoreboard"]["border"]["width"] == 2
+
+    settings["overlay"]["scoreboard"]["border"] = "#ff00ff"
+    validated = validate_settings(settings)
+    assert validated["overlay"]["scoreboard"]["border"]["width"] == 1
+    assert validated["overlay"]["scoreboard"]["border"]["color"] == "#ff00ff"
+
+
+@pytest.mark.parametrize(
+    ("border_setting", "error"),
+    [
+        ({"width": -1}, "overlay.scoreboard.border.width must be zero or greater"),
+        ({"width": "two"}, "overlay.scoreboard.border.width must be a number"),
+        ({"width": True}, "overlay.scoreboard.border.width must be a number"),
+        ({"thickness": -2}, "overlay.scoreboard.border.width must be zero or greater"),
+        ({"color": "blue"}, "overlay.scoreboard.border.color must be a hex color"),
+        ({"enabled": "yes"}, "overlay.scoreboard.border.enabled must be true or false"),
+        ({"unknown_key": 5}, "Unknown overlay.scoreboard.border setting: unknown_key"),
+        ({"width": 2, "thickness": 3}, "overlay.scoreboard.border cannot have conflicting width and thickness"),
+        ([1, 2], "overlay.scoreboard.border must be an object"),
+    ],
+)
+def test_overlay_border_rejects_invalid_values(border_setting, error):
+    settings = default_settings()
+    settings["overlay"]["scoreboard"]["border"] = border_setting
+    with pytest.raises(SettingsError, match=error):
+        validate_settings(settings)
 
 
 def test_overlay_font_and_colors_are_independent_and_validated():

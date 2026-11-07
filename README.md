@@ -129,6 +129,7 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `control.pre_match_pinned` | `true` or `false`. When true, keeps the pre-match overlay visible until you hide it from the Control page. |
 | `overlay.scoreboard.width`, `overlay.scoreboard.height` | Fixed pixel width and height for the main overlay and its OBS Browser Source. |
 | `overlay.prematch.width`, `overlay.prematch.height` | Fixed pixel width and height for the pre-match overlay and its OBS Browser Source. |
+| `overlay.scoreboard.border`, `overlay.prematch.border` | Border customization for each overlay. Accepts `width` (or `thickness`) in pixels and hex `color` (e.g. `width: 1`, `color: "#ffffff38"`). Set `width: 0` or `border: false` to disable the border completely. The scoreboard overlay border is turned off by default (`width: 0`); the pre-match overlay defaults to a 1px border. |
 | `overlay.control.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on the Control page. |
 | `overlay.scoreboard.font_sizes`, `overlay.prematch.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on each overlay. |
 | `overlay.prematch.opacity` | Background opacity of the pre-match card, from `0` (transparent) to `1` (opaque). The default is `0.5`. Text opacity is unchanged. |
@@ -163,6 +164,9 @@ overlay:
       background: "#151923"
   scoreboard:
     font_family: '"Segoe UI", Arial, sans-serif'
+    border:
+      width: 0
+      color: "#ffffff38"
     font_sizes:
       text: 45
       muted: 36
@@ -178,6 +182,9 @@ overlay:
       background: "#10141c"
   prematch:
     font_family: '"Georgia", serif'
+    border:
+      width: 1
+      color: "#ffffff33"
     font_sizes:
       text: 88
       muted: 36
@@ -193,7 +200,7 @@ overlay:
       background: "#141922"
 ```
 
-These sections can be added alongside the other `overlay` settings in `config.yaml`. You can omit individual style settings to use their defaults. Font settings are independent per page and apply live when the configuration file is saved. The default scoreboard is 791 by 175 pixels, with its text sized to fit. Colors must be CSS hex values such as `#abc` or `#aabbcc`.
+These sections can be added alongside the other `overlay` settings in `config.yaml`. You can omit individual style settings to use their defaults. Font and border settings are independent per overlay and apply live when the configuration file is saved. The border width (or `thickness`) is specified in pixels, and colors must be CSS hex values such as `#abc` or `#aabbcc` (including 8-digit hex colors with alpha such as `#ffffff38`). Set `border.width: 0` or `border: false` to turn an overlay's border off completely. By default, the scoreboard overlay border is turned off (`width: 0`) and the pre-match overlay includes a 1px border (`width: 1`). The default scoreboard is 791 by 175 pixels, with its text sized to fit. Colors must be CSS hex values such as `#abc` or `#aabbcc`.
 
 Each overlay's configured width and height define its complete fixed-size image in CSS pixels. There is no canvas scaling or internal positioning; place each Browser Source where you want it in OBS. Set `overlay.prematch.opacity` from `0` to `1` to adjust only the card background transparency; the text stays fully opaque. Capture-region coordinates refer to the selected desktop monitor, not the OBS overlay. OCR name-box coordinates are pixel offsets inside the capture region. If the sumo broadcast moves its scoreboard, update the capture rectangle and/or name-box coordinates to match.
 
