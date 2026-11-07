@@ -7,6 +7,12 @@
   --overlay-current-score-color: #e8bd68;
   --overlay-result-color: #ff4b4b;
   --overlay-background-color: #10141c;
+  --overlay-border-width: 0px;
+  --overlay-border-style: none;
+  --overlay-border-color: rgb(255 255 255 / 22%);
+  --prematch-border-width: 1px;
+  --prematch-border-style: solid;
+  --prematch-border-color: rgb(255 255 255 / 20%);
   font-family: var(--overlay-font-family);
 }
 
@@ -40,7 +46,9 @@ body {
   align-items: center;
   gap: 24px;
   padding: 10px 20px;
-  border: 1px solid rgb(255 255 255 / 22%);
+  border-width: var(--overlay-border-width, 0px);
+  border-style: var(--overlay-border-style, none);
+  border-color: var(--overlay-border-color, rgb(255 255 255 / 22%));
   border-radius: 0;
   background: #10141c;
   background: var(--overlay-background-color);
@@ -126,7 +134,9 @@ body {
   flex-direction: column;
   justify-content: center;
   padding: 88px;
-  border: 1px solid rgb(255 255 255 / 20%);
+  border-width: var(--prematch-border-width, 1px);
+  border-style: var(--prematch-border-style, solid);
+  border-color: var(--prematch-border-color, rgb(255 255 255 / 20%));
   border-radius: 10px;
   background: linear-gradient(
     115deg,

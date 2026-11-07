@@ -54,6 +54,14 @@ DEFAULT_CONTROL_FONT_SIZES = {
     "current_score": 16,
     "result": 16,
 }
+DEFAULT_SCOREBOARD_BORDER = {
+    "width": 0,
+    "color": "#ffffff38",
+}
+DEFAULT_PREMATCH_BORDER = {
+    "width": 1,
+    "color": "#ffffff33",
+}
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "basho_id": "202609",
@@ -105,6 +113,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "width": 791,
             "height": 175,
             "font_sizes": copy.deepcopy(DEFAULT_SCOREBOARD_FONT_SIZES),
+            "border": copy.deepcopy(DEFAULT_SCOREBOARD_BORDER),
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
             "colors": {
                 **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
@@ -117,6 +126,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "height": 800,
             "opacity": 0.95,
             "font_sizes": copy.deepcopy(DEFAULT_PREMATCH_FONT_SIZES),
+            "border": copy.deepcopy(DEFAULT_PREMATCH_BORDER),
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
             "colors": {
                 **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
@@ -211,6 +221,78 @@ def _validate_overlay_font_sizes(
     for name, value in validated.items():
         validated[name] = _positive_number(value, f"{label}.font_sizes.{name}")
     return validated
+
+
+def _validate_overlay_border(
+    raw_border: Any, defaults: dict[str, Any], label: str
+) -> dict[str, Any]:
+    if raw_border is None:
+        return copy.deepcopy(defaults)
+    if raw_border is False:
+        return {"width": 0, "color": defaults["color"]}
+    if raw_border is True:
+        default_width = defaults["width"] if defaults["width"] > 0 else 1
+        return {"width": default_width, "color": defaults["color"]}
+    if isinstance(raw_border, (int, float)) and not isinstance(raw_border, bool):
+        if not math.isfinite(raw_border) or raw_border < 0:
+            raise SettingsError(f"{label}.border.width must be zero or greater")
+        return {"width": int(raw_border), "color": defaults["color"]}
+    if isinstance(raw_border, str):
+        normalized = raw_border.strip().lower()
+        if normalized in ("none", "off", "false", "disabled", "no"):
+            return {"width": 0, "color": defaults["color"]}
+        if normalized in ("solid", "on", "true", "enabled", "yes"):
+            default_width = defaults["width"] if defaults["width"] > 0 else 1
+            return {"width": default_width, "color": defaults["color"]}
+        if re.fullmatch(r"#[0-9A-Fa-f]{3,4}|#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{8}", raw_border):
+            default_width = defaults["width"] if defaults["width"] > 0 else 1
+            return {"width": default_width, "color": raw_border}
+        raise SettingsError(f"{label}.border must be an object, boolean, number, or hex color")
+    if not isinstance(raw_border, dict):
+        raise SettingsError(f"{label}.border must be an object")
+
+    unknown_keys = set(raw_border) - {"width", "thickness", "color", "enabled"}
+    if unknown_keys:
+        raise SettingsError(f"Unknown {label}.border setting: {sorted(unknown_keys)[0]}")
+
+    if "enabled" in raw_border and not isinstance(raw_border["enabled"], bool):
+        raise SettingsError(f"{label}.border.enabled must be true or false")
+
+    width_val = raw_border.get("width")
+    thickness_val = raw_border.get("thickness")
+    if width_val is not None and thickness_val is not None and width_val != thickness_val:
+        raise SettingsError(f"{label}.border cannot have conflicting width and thickness")
+
+    width_to_use = width_val if width_val is not None else thickness_val
+    if width_to_use is not None:
+        if isinstance(width_to_use, bool) or not isinstance(width_to_use, (int, float)):
+            raise SettingsError(f"{label}.border.width must be a number")
+        if not math.isfinite(width_to_use) or width_to_use < 0:
+            raise SettingsError(f"{label}.border.width must be zero or greater")
+        final_width = int(width_to_use)
+    elif raw_border.get("enabled") is False:
+        final_width = 0
+    elif raw_border.get("enabled") is True:
+        final_width = defaults["width"] if defaults["width"] > 0 else 1
+    elif "color" in raw_border and defaults["width"] == 0:
+        final_width = 1
+    else:
+        final_width = defaults["width"]
+
+    if raw_border.get("enabled") is False:
+        final_width = 0
+
+    color_val = raw_border.get("color")
+    if color_val is not None:
+        if not isinstance(color_val, str) or re.fullmatch(
+            r"#[0-9A-Fa-f]{3,4}|#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{8}", color_val
+        ) is None:
+            raise SettingsError(f"{label}.border.color must be a hex color")
+        final_color = color_val
+    else:
+        final_color = defaults["color"]
+
+    return {"width": final_width, "color": final_color}
 
 
 def _validate_bounds(bounds: Any, label: str) -> dict[str, int]:
@@ -384,7 +466,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             raise SettingsError(f"overlay.{key} must be an object")
         allowed_keys = {"font_family", "colors"}
         if key != "control":
-            allowed_keys.update({"width", "height"})
+            allowed_keys.update({"width", "height", "border"})
         allowed_keys.add("font_sizes")
         if key == "prematch":
             allowed_keys.add("opacity")
@@ -412,11 +494,22 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         }
         for key in ("control", "scoreboard", "prematch")
     }
+    for key in ("scoreboard", "prematch"):
+        raw_border = overlay.get(key, {}).get("border")
+        overlay[key]["border"] = _validate_overlay_border(
+            raw_border, overlay_defaults[key]["border"], f"overlay.{key}"
+        )
     for key in ("control", "scoreboard", "prematch"):
         extra_colors = {"current_score": "#e8bd68"}
+        if key in ("scoreboard", "prematch") and "border" in overlay.get(key, {}).get("colors", {}):
+            extra_colors["border"] = overlay[key]["border"]["color"]
         overlay[key] = _validate_overlay_style(
             overlay[key], f"overlay.{key}", extra_colors=extra_colors
         )
+        if key in ("scoreboard", "prematch") and "border" in overlay.get(key, {}).get("colors", {}):
+            raw_b = overlay.get(key, {}).get("border")
+            if not isinstance(raw_b, dict) or "color" not in raw_b:
+                overlay[key]["border"]["color"] = overlay[key]["colors"]["border"]
     font_size_defaults = {
         "control": DEFAULT_CONTROL_FONT_SIZES,
         "scoreboard": DEFAULT_SCOREBOARD_FONT_SIZES,

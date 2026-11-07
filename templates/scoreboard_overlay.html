@@ -56,6 +56,16 @@
         "--scoreboard-versus-font-size",
         `${style.font_sizes.muted * (56 / 72)}px`
       );
+      if (style.border) {
+        const borderWidth = style.border.width !== undefined ? style.border.width : 0;
+        const borderColor = style.border.color || "rgb(255 255 255 / 22%)";
+        root.style.setProperty("--overlay-border-width", `${borderWidth}px`);
+        root.style.setProperty("--overlay-border-style", borderWidth > 0 ? "solid" : "none");
+        root.style.setProperty("--overlay-border-color", borderColor);
+        mainOverlay.style.borderWidth = `${borderWidth}px`;
+        mainOverlay.style.borderStyle = borderWidth > 0 ? "solid" : "none";
+        mainOverlay.style.borderColor = borderColor;
+      }
     }
 
     function abbreviatedRank(rank) {
