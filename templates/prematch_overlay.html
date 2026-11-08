@@ -4,17 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Pre-Match Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=9) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=11) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
   <main id="pre-match-overlay" class="configured-box pre-match-card" hidden aria-live="polite">
     <div class="bout-meta">
-      <span><span id="division"></span> <span id="division-number"></span></span>
-      <span class="bout-meta-right">
-        <span id="bout-number"></span>
-        <span id="bouts-until-next-stage"></span>
-      </span>
+      <span id="division"></span>
+      <span id="division-number"></span>
+      <span id="bout-number"></span>
     </div>
     <div class="matchup">
       <section class="wrestler east">
@@ -76,10 +74,6 @@
         root.style.setProperty(
           "--prematch-profile-font-size",
           `${style.font_sizes.muted * (26 / 36)}px`
-        );
-        root.style.setProperty(
-          "--prematch-next-stage-font-size",
-          `${style.font_sizes.muted * 0.78}px`
         );
         root.style.setProperty(
           "--prematch-versus-font-size",
@@ -187,6 +181,28 @@
       };
     }
 
+    function rankComparisonKey(rank) {
+      if (typeof rank !== "string") return null;
+      const match =
+        /^(Mae-zumo|Jonokuchi|Jonidan|Sandanme|Makushita|Juryo|Maegashira|Komusubi|Sekiwake|Ozeki|Yokozuna)(?: (\d+) (?:East|West))?$/.exec(
+          rank.trim()
+        );
+      return match ? `${match[1]} ${match[2] || ""}` : null;
+    }
+
+    function renderCurrentRank(side, rank, highestRank) {
+      const container = document.getElementById(`${side}-rank`);
+      const text = rank || "Rank unavailable";
+      const comparisonKey = rankComparisonKey(rank);
+      if (comparisonKey && comparisonKey === rankComparisonKey(highestRank)) {
+        const emphasizedRank = document.createElement("strong");
+        emphasizedRank.textContent = text;
+        container.replaceChildren(emphasizedRank);
+      } else {
+        container.textContent = text;
+      }
+    }
+
     function heightText(heightCm) {
       if (typeof heightCm !== "number" || heightCm <= 0) return null;
       const totalInches = Math.round(heightCm / 2.54);
@@ -256,6 +272,15 @@
           comparisons.age[side]
         );
       }
+      if (content.highestRank) {
+        const currentRank = state[side] && state[side].rank;
+        const highestRankKey = rankComparisonKey(content.highestRank);
+        line(
+          "Highest rank",
+          content.highestRank,
+          highestRankKey !== null && highestRankKey === rankComparisonKey(currentRank)
+        );
+      }
       const height = heightText(content.height);
       if (height) line("Height", height.replace(/^Height: /, ""), comparisons.height[side]);
       const weight = weightText(content.weight);
@@ -277,24 +302,16 @@
         `(Division ${state.divisionNumber})`;
       document.getElementById("bout-number").textContent =
         `Bout ${state.divisionBoutNumber} out of ${state.divisionTotal}`;
-      const nextStage = document.getElementById("bouts-until-next-stage");
-      if (state.boutsUntilNextStage === null || state.boutsUntilNextStage === undefined) {
-        nextStage.textContent = "";
-      } else {
-        const target = state.divisionNumber === 1 ? "Sanyaku" : "next division";
-        const boutWord = state.boutsUntilNextStage === 1 ? "bout" : "bouts";
-        nextStage.textContent = `${state.boutsUntilNextStage} ${boutWord} until ${target}`;
-      }
       document.getElementById("east-name").textContent = state.east.name;
       document.getElementById("west-name").textContent = state.west.name;
-      document.getElementById("east-rank").textContent = state.east.rank || "Rank unavailable";
-      document.getElementById("west-rank").textContent = state.west.rank || "Rank unavailable";
       const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
-      renderBoutRecord("east", state.east.record, emphasisThreshold, state.announcedWinner);
-      renderBoutRecord("west", state.west.record, emphasisThreshold, state.announcedWinner);
       const profiles = state.wrestlerProfiles || {};
       const eastProfile = profiles.east || {};
       const westProfile = profiles.west || {};
+      renderCurrentRank("east", state.east.rank, eastProfile.highestRank);
+      renderCurrentRank("west", state.west.rank, westProfile.highestRank);
+      renderBoutRecord("east", state.east.record, emphasisThreshold, state.announcedWinner);
+      renderBoutRecord("west", state.west.record, emphasisThreshold, state.announcedWinner);
       const eastAge = ageFromBirthDate(eastProfile.birthDate);
       const westAge = ageFromBirthDate(westProfile.birthDate);
       const eastLifetime = eastProfile.lifetime;
@@ -337,9 +354,11 @@
       const h2h = state.headToHead;
       const h2hScore = document.getElementById("head-to-head-score");
       const h2hHistory = document.getElementById("head-to-head-history");
-      h2hScore.textContent = h2h
-        ? `Head to Head: ${h2h.eastWins} - ${h2h.westWins}`
-        : "Head to Head: unavailable";
+      h2hScore.textContent = !h2h
+        ? "Head to Head: unavailable"
+        : h2h.eastWins === 0 && h2h.westWins === 0
+          ? "Head to Head: First Meeting"
+          : `Head to Head: ${h2h.eastWins} - ${h2h.westWins}`;
       h2hHistory.replaceChildren();
       if (h2h && Array.isArray(h2h.history)) {
         h2h.history.forEach((winner, index) => {

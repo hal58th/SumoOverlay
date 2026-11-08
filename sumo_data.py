@@ -12,6 +12,24 @@ import requests
 
 
 DIVISION_ORDER = ("Jonokuchi", "Jonidan", "Sandanme", "Makushita", "Juryo", "Makuuchi")
+RANK_ORDER = {
+    name: index
+    for index, name in enumerate(
+        (
+            "Mae-zumo",
+            "Jonokuchi",
+            "Jonidan",
+            "Sandanme",
+            "Makushita",
+            "Juryo",
+            "Maegashira",
+            "Komusubi",
+            "Sekiwake",
+            "Ozeki",
+            "Yokozuna",
+        )
+    )
+}
 LookupValue = TypeVar("LookupValue")
 
 
@@ -98,6 +116,23 @@ def _required_text(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise SumoApiError(f"sumo-api.com returned a missing or invalid {label}")
     return value.strip()
+
+
+def _rank_order_key(rank: Any) -> tuple[int, int] | None:
+    if not isinstance(rank, str):
+        return None
+    rank = rank.strip()
+    if rank == "Mae-zumo":
+        return (RANK_ORDER["Mae-zumo"], 0)
+    parts = rank.split()
+    if (
+        len(parts) != 3
+        or parts[0] not in RANK_ORDER
+        or not parts[1].isdigit()
+        or parts[2] not in ("East", "West")
+    ):
+        return None
+    return (RANK_ORDER[parts[0]], -int(parts[1]))
 
 
 def _parse_matches(payload: dict[str, Any], day: int) -> list[dict[str, Any]]:
@@ -459,6 +494,7 @@ class BashoSchedule:
                     return None
                 return value
 
+            highest_rank = self._highest_rank(participant.rikishi_id)
             profiles[side] = {
                 "birthDate": text_field("birthDate"),
                 "heya": text_field("heya"),
@@ -466,20 +502,38 @@ class BashoSchedule:
                 "weight": measurement_field("weight"),
                 "shusshin": text_field("shusshin"),
                 "debut": text_field("debut"),
+                "highestRank": highest_rank or text_field("currentRank") or participant.rank,
                 "lifetime": self._lifetime_record(participant.rikishi_id, bout),
             }
         return profiles
 
-    def _lifetime_record(self, rikishi_id: int, bout: Bout) -> dict[str, int]:
+    def _career_matches(self, rikishi_id: int) -> list[dict[str, Any]]:
         if rikishi_id not in self._career_matches_cache:
             self._career_matches_cache[rikishi_id] = self.client.fetch_rikishi_matches(
                 rikishi_id
             )
+        return self._career_matches_cache[rikishi_id]
 
+    def _highest_rank(self, rikishi_id: int) -> str | None:
+        highest: tuple[tuple[int, int], str] | None = None
+        for match in self._career_matches(rikishi_id):
+            for side in ("east", "west"):
+                match_rikishi_id = _required_int(
+                    match.get(f"{side}Id"), f"rikishi match {side} ID"
+                )
+                if match_rikishi_id != rikishi_id:
+                    continue
+                rank = match.get(f"{side}Rank")
+                key = _rank_order_key(rank)
+                if key is not None and (highest is None or key > highest[0]):
+                    highest = (key, rank.strip())
+        return highest[1] if highest else None
+
+    def _lifetime_record(self, rikishi_id: int, bout: Bout) -> dict[str, int]:
         target = (self.basho_id, self.day)
         wins = 0
         losses = 0
-        for match in self._career_matches_cache[rikishi_id]:
+        for match in self._career_matches(rikishi_id):
             match_key = _basho_day_key(match, "rikishi match history")
             if match_key >= target:
                 continue

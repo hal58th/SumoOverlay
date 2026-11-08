@@ -25,9 +25,6 @@
     .control-panel .rank { font-size: calc(var(--overlay-muted-font-size) * .333333); }
     .control-panel .record { font-size: var(--overlay-current-score-font-size); }
     .control-panel .versus { font-size: calc(var(--overlay-muted-font-size) * .777778); }
-    .control-panel #bouts-until-next-stage {
-      font-size: calc(var(--overlay-muted-font-size) * .78);
-    }
     .control-panel .head-to-head {
       margin-top: 12px;
       font-size: calc(var(--overlay-text-font-size) * .571429);
@@ -96,11 +93,7 @@
     <h1>Sumo Overlay Controls</h1>
     <section id="bout-card" class="bout-card pre-match-card" aria-live="polite">
       <div class="bout-meta">
-        <span>SUMO</span>
-        <span class="bout-meta-right">
-          <span id="bout-number"></span>
-          <span id="bouts-until-next-stage"></span>
-        </span>
+        <span id="bout-number"></span>
       </div>
       <div class="matchup">
         <section class="wrestler east">
@@ -273,16 +266,15 @@
     }
     function renderBout(state) {
       if (!state || state.error || !state.east || !state.west) return;
+      const boutNumber = `Bout ${state.index + 1}/${state.total}`;
+      const boutsUntilNextDivision =
+        state.boutsUntilNextStage === null || state.boutsUntilNextStage === undefined
+          ? ""
+          : ` - ${state.boutsUntilNextStage} ${
+              state.boutsUntilNextStage === 1 ? "bout" : "bouts"
+            } until next division`;
       document.getElementById("bout-number").textContent =
-        `BOUT ${state.matchNo} · ${state.index + 1}/${state.total}`;
-      const nextStage = document.getElementById("bouts-until-next-stage");
-      if (state.boutsUntilNextStage === null || state.boutsUntilNextStage === undefined) {
-        nextStage.textContent = "";
-      } else {
-        const target = state.divisionNumber === 1 ? "Sanyaku" : "next division";
-        const boutWord = state.boutsUntilNextStage === 1 ? "bout" : "bouts";
-        nextStage.textContent = `${state.boutsUntilNextStage} ${boutWord} until ${target}`;
-      }
+        boutNumber + boutsUntilNextDivision;
       document.getElementById("east-name").textContent = state.east.name;
       document.getElementById("west-name").textContent = state.west.name;
       document.getElementById("east-rank").textContent = state.east.rank || "";
