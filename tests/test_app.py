@@ -310,10 +310,21 @@ def test_pages_and_kanji_lookup_are_available():
     assert "vw" not in all_styles
     assert "vh" not in all_styles
     pre_match_html = client.get("/prematch").text
+    pre_match_card_styles = all_styles.split(".pre-match-card {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "justify-content: flex-start;" in pre_match_card_styles
     assert (
         "const { width, height, opacity } = state.settings.overlay.prematch;"
         in pre_match_html
     )
+    assert 'id="bouts-until-next-stage"' not in pre_match_html
+    assert "Bout ${state.divisionBoutNumber} out of ${state.divisionTotal}" in pre_match_html
+    assert "state.boutsUntilNextStage" not in pre_match_html
+    assert '"Highest rank"' in pre_match_html
+    assert "highestRankKey === rankComparisonKey(currentRank)" in pre_match_html
+    assert '? "Head to Head: First Meeting"' in pre_match_html
+    assert "rankComparisonKey(rank)" in pre_match_html
     assert "state.divisionNumber <= 2" in pre_match_html
     assert "state.settings.preMatchSalariedSeconds" in pre_match_html
     assert "state.settings.preMatchUnsalariedSeconds" in pre_match_html
@@ -323,6 +334,8 @@ def test_pages_and_kanji_lookup_are_available():
     assert '"--prematch-border-width"' in pre_match_html
     assert '"--prematch-border-color"' in pre_match_html
     assert "--prematch-border-width: 1px;" in all_styles
+    assert "max-height: 14em;" in all_styles
+    assert "-webkit-line-clamp: 2;" in all_styles
     assert "--prematch-border-style: solid;" in all_styles
     assert "--overlay-border-width: 0px;" in all_styles
     assert "--overlay-border-style: none;" in all_styles
@@ -342,9 +355,11 @@ def test_pages_and_kanji_lookup_are_available():
     assert "style.font_sizes.result}px" in control.text
     assert "font-size: var(--overlay-accent-font-size);" in control.text
     assert "font-size: var(--overlay-result-font-size);" in control.text
-    assert 'id="bouts-until-next-stage"' in control.text
+    assert "<span>SUMO</span>" not in control.text
+    assert 'id="bouts-until-next-stage"' not in control.text
     assert 'class="rank-record"' in control.text
-    assert '`${state.boutsUntilNextStage} ${boutWord} until ${target}`' in control.text
+    assert "Bout ${state.index + 1}/${state.total}" in control.text
+    assert "until next division" in control.text
     assert client.get("/api/lookup").json == {"栃大海": "Tochitaikai"}
     assert client.get("/api/state").json["headToHead"] is None
 

@@ -132,8 +132,8 @@ body {
   left: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 88px;
+  justify-content: flex-start;
+  padding: 30px 72px 68px;
   border-width: var(--prematch-border-width, 1px);
   border-style: var(--prematch-border-style, solid);
   border-color: var(--prematch-border-color, rgb(255 255 255 / 20%));
@@ -157,25 +157,16 @@ body {
 
 .bout-meta {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  align-items: baseline;
+  gap: 0 .45em;
   color: var(--overlay-accent-color);
   font-size: var(--prematch-meta-font-size);
   font-weight: 800;
   letter-spacing: .14em;
 }
 
-.bout-meta-right {
-  display: grid;
-  justify-items: end;
-  gap: 5px;
-  text-align: right;
-}
-
-#bouts-until-next-stage {
-  color: var(--overlay-muted-color);
-  font-size: var(--prematch-next-stage-font-size);
-  letter-spacing: .04em;
+.bout-meta > span {
+  min-width: 0;
 }
 
 .matchup {
@@ -183,7 +174,7 @@ body {
   grid-template-columns: 1fr auto 1fr;
   align-items: start;
   gap: 72px;
-  margin-top: 48px;
+  margin-top: 0px;
 }
 
 .wrestler {
@@ -222,6 +213,8 @@ body {
 }
 
 .wrestler-profile {
+  max-height: 14em;
+  overflow: hidden;
   margin-top: 6px;
   color: var(--overlay-muted-color);
   font-size: var(--prematch-profile-font-size);
@@ -231,6 +224,13 @@ body {
 
 .wrestler-profile-line + .wrestler-profile-line {
   margin-top: 3px;
+}
+
+.wrestler-profile-line {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .wrestler-profile strong {
@@ -262,7 +262,7 @@ body {
 }
 
 .head-to-head {
-  margin-top: 60px;
+  margin-top: 32px;
   color: var(--overlay-text-color);
   font-weight: 700;
   text-align: center;

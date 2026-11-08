@@ -329,12 +329,36 @@ def test_schedule_returns_cached_broadcast_profile_details():
                 "weight": 188,
                 "shusshin": "Ishikawa",
                 "debut": "202305",
+                "currentRank": "Maegashira 4 East",
                 "unrelated": "not exposed",
             }
 
         def fetch_rikishi_matches(self, rikishi_id):
             self.career_calls.append(rikishi_id)
-            return []
+            ranks = {
+                1: ("Maegashira 4 East", "Sekiwake 1 West"),
+                2: ("Maegashira 2 West", "Ozeki 1 East"),
+            }[rikishi_id]
+            return [
+                {
+                    "bashoId": "202401",
+                    "day": 1,
+                    "winnerId": None,
+                    "eastId": rikishi_id,
+                    "eastRank": ranks[0],
+                    "westId": 100,
+                    "westRank": "Maegashira 1 East",
+                },
+                {
+                    "bashoId": "202402",
+                    "day": 1,
+                    "winnerId": None,
+                    "eastId": rikishi_id,
+                    "eastRank": ranks[1],
+                    "westId": 100,
+                    "westRank": "Maegashira 1 East",
+                },
+            ]
 
     client = FakeClient()
     schedule = BashoSchedule(client, "202505", "Makuuchi", 1)
@@ -349,6 +373,7 @@ def test_schedule_returns_cached_broadcast_profile_details():
             "weight": 188,
             "shusshin": "Ishikawa",
             "debut": "202305",
+            "highestRank": "Sekiwake 1 West",
             "lifetime": {"wins": 0, "losses": 0, "matches": 0},
         },
         "west": {
@@ -358,6 +383,7 @@ def test_schedule_returns_cached_broadcast_profile_details():
             "weight": 188,
             "shusshin": "Ishikawa",
             "debut": "202305",
+            "highestRank": "Ozeki 1 East",
             "lifetime": {"wins": 0, "losses": 0, "matches": 0},
         },
     }
