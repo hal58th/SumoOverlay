@@ -149,6 +149,27 @@ body {
   font-size: var(--overlay-muted-font-size);
 }
 
+.upcoming-line {
+  display: flex;
+  gap: .35em;
+  overflow: hidden;
+  font-size: var(--overlay-text-font-size);
+  opacity: var(--slim-text-opacity, 1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upcoming-label {
+  flex-shrink: 0;
+  color: var(--overlay-accent-color);
+}
+
+#upcoming-matchups {
+  overflow: hidden;
+  color: var(--overlay-text-color);
+  text-overflow: ellipsis;
+}
+
 .slimfull .slim-main-line {
   justify-content: flex-start;
   gap: 10px;

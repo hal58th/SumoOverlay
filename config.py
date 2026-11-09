@@ -69,7 +69,13 @@ DEFAULT_PREMATCH_BORDER = {
     "width": 1,
     "color": "#ffffff33",
 }
-BOX_OVERLAYS = ("scoreboard", "prematch", "slimhalf", "slimfull")
+BOX_OVERLAYS = (
+    "scoreboard",
+    "prematch",
+    "slimhalf",
+    "slimfull",
+    "upcomingmatches",
+)
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "basho_id": "202609",
@@ -176,12 +182,27 @@ DEFAULT_SETTINGS: dict[str, Any] = {
                 "background": "#10141c",
             },
         },
+        "upcomingmatches": {
+            "width": 1080,
+            "height": 36,
+            "opacity": 1,
+            "text_opacity": 1,
+            "font_sizes": copy.deepcopy(DEFAULT_SLIM_FONT_SIZES),
+            "border": copy.deepcopy(DEFAULT_SCOREBOARD_BORDER),
+            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+            "colors": {
+                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
+                "current_score": "#e8bd68",
+                "background": "#10141c",
+            },
+        },
     },
     "templates": {
         "scoreboard": "scoreboard_overlay.html",
         "prematch": "prematch_overlay.html",
         "slimhalf": "slim_scoreboard_overlay.html",
         "slimfull": "slim_scoreboard_overlay.html",
+        "upcomingmatches": "upcoming_matches_overlay.html",
     },
 }
 
@@ -562,6 +583,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         "prematch": DEFAULT_PREMATCH_FONT_SIZES,
         "slimhalf": DEFAULT_SLIM_FONT_SIZES,
         "slimfull": DEFAULT_SLIM_FONT_SIZES,
+        "upcomingmatches": DEFAULT_SLIM_FONT_SIZES,
     }
     for key, defaults in font_size_defaults.items():
         overlay[key]["font_sizes"] = _validate_overlay_font_sizes(

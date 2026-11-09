@@ -87,6 +87,57 @@ def test_manual_controls_update_state_and_emit_websocket_event():
     socket_client.disconnect()
 
 
+def test_upcoming_matches_state_tracks_the_next_four_bouts():
+    schedule = FakeSchedule(
+        [make_bout(index, index * 2, index * 2 + 1) for index in range(1, 7)]
+    )
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+    client = app.test_client()
+
+    upcoming = client.get("/api/state").json["upcomingMatches"]
+    assert upcoming == [
+        {"east": "East 4", "west": "West 5"},
+        {"east": "East 6", "west": "West 7"},
+        {"east": "East 8", "west": "West 9"},
+        {"east": "East 10", "west": "West 11"},
+    ]
+
+    response = client.post("/api/control/next")
+    assert response.status_code == 200
+    assert response.json["upcomingMatches"] == [
+        {"east": "East 6", "west": "West 7"},
+        {"east": "East 8", "west": "West 9"},
+        {"east": "East 10", "west": "West 11"},
+        {"east": "East 12", "west": "West 13"},
+    ]
+
+    for _ in range(4):
+        response = client.post("/api/control/next")
+    assert response.json["upcomingMatches"] == []
+
+
+def test_upcoming_matches_overlay_uses_configured_template(tmp_path):
+    settings = default_settings()
+    settings["templates"]["upcomingmatches"] = "custom_upcoming.html"
+    settings_path = tmp_path / "config.yaml"
+    write_config(settings_path, settings)
+    custom_template_dir = tmp_path / "custom_templates"
+    custom_template_dir.mkdir()
+    (custom_template_dir / "custom_upcoming.html").write_text(
+        "<main>Custom upcoming matches</main>", encoding="utf-8"
+    )
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+
+    assert b"Custom upcoming matches" in app.test_client().get(
+        "/upcomingmatches"
+    ).data
+
+
 def test_failed_head_to_head_refresh_does_not_publish_unavailable_pre_match_state():
     class FailingH2HSchedule(FakeSchedule):
         def head_to_head(self, bout):
@@ -279,6 +330,8 @@ def test_pages_and_kanji_lookup_are_available():
     assert slimhalf_overlay.status_code == 200
     slimfull_overlay = client.get("/scoreboard/slimfull")
     assert slimfull_overlay.status_code == 200
+    upcoming_overlay = client.get("/upcomingmatches")
+    assert upcoming_overlay.status_code == 200
     assert client.get("/main-overlay").status_code == 404
     assert client.get("/scoreboard-overlay").status_code == 404
     assert 'Makuuchi: 1' in scoreboard_overlay.text
@@ -345,6 +398,13 @@ def test_pages_and_kanji_lookup_are_available():
     assert "gap: 10px;" in slimfull_line_styles
     assert "var(--slim-opacity, 1)" in all_styles
     assert "var(--slim-text-opacity, 1)" in all_styles
+    assert 'class="configured-box slim-strip upcoming-strip"' in upcoming_overlay.text
+    assert "state.upcomingMatches.map(" in upcoming_overlay.text
+    assert "matchups.join(\" - \")" in upcoming_overlay.text
+    assert 'state.settings.overlay.upcomingmatches' in upcoming_overlay.text
+    assert 'class="upcoming-label">Upcoming:</span>' in upcoming_overlay.text
+    assert ".upcoming-label" in all_styles
+    assert "color: var(--overlay-accent-color);" in all_styles
     assert "clamp(" not in all_styles
     assert "vw" not in all_styles
     assert "vh" not in all_styles
@@ -832,6 +892,8 @@ def test_slim_scoreboard_defaults_and_independent_overrides():
     assert settings["overlay"]["slimfull"]["height"] == 36
     assert settings["overlay"]["slimhalf"]["show_current_score"] is True
     assert settings["overlay"]["slimfull"]["show_current_score"] is True
+    assert settings["overlay"]["upcomingmatches"]["width"] == 1080
+    assert settings["overlay"]["upcomingmatches"]["height"] == 36
 
     settings["overlay"]["slimhalf"]["width"] = 600
     settings["overlay"]["slimhalf"]["opacity"] = 0.7
@@ -878,8 +940,8 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
         "current_score": 16,
         "result": 16,
     }
-    assert settings["overlay"]["scoreboard"]["width"] == 791
-    assert settings["overlay"]["scoreboard"]["height"] == 175
+    assert settings["overlay"]["scoreboard"]["width"] == 993
+    assert settings["overlay"]["scoreboard"]["height"] == 158
     assert settings["overlay"]["scoreboard"]["opacity"] == 1
     assert settings["overlay"]["scoreboard"]["text_opacity"] == 1
     assert settings["overlay"]["prematch"]["text_opacity"] == 1
@@ -891,7 +953,7 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
         "result": 40,
     }
     assert settings["overlay"]["prematch"]["font_sizes"] == {
-        "text": 88,
+        "text": 80,
         "muted": 36,
         "accent": 54,
         "current_score": 38,
