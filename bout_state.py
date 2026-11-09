@@ -31,6 +31,13 @@ class BoutController:
         with self._lock:
             bout = self._bouts[self._index]
             payload = bout.to_payload(self._index, len(self._bouts))
+            payload["upcomingMatches"] = [
+                {
+                    "east": upcoming.east.name,
+                    "west": upcoming.west.name,
+                }
+                for upcoming in self._bouts[self._index + 1 : self._index + 5]
+            ]
             division_bouts = [
                 (index, scheduled_bout)
                 for index, scheduled_bout in enumerate(self._bouts)

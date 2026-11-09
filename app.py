@@ -253,6 +253,10 @@ def create_app(
             current_settings()["templates"]["slimfull"], layout="slimfull"
         )
 
+    @app.get("/upcomingmatches")
+    def upcoming_matches_overlay() -> str:
+        return render_template(current_settings()["templates"]["upcomingmatches"])
+
     @app.get("/control")
     def control() -> str:
         return render_template("control.html")

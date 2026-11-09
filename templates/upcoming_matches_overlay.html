@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upcoming Sumo Matches</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=15) }}">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <main id="upcoming-overlay" class="configured-box slim-strip upcoming-strip" hidden aria-live="polite">
+    <div class="upcoming-line">
+      <span class="upcoming-label">Upcoming:</span>
+      <span id="upcoming-matchups"></span>
+    </div>
+  </main>
+  <script>
+    const upcomingOverlay = document.getElementById("upcoming-overlay");
+    const upcomingMatchups = document.getElementById("upcoming-matchups");
+
+    function renderUpcoming(state) {
+      if (!state.settings || !state.settings.overlay) return;
+      if (!Array.isArray(state.upcomingMatches)) {
+        console.error("Bout state is missing upcoming matches");
+        return;
+      }
+      const style = state.settings.overlay.upcomingmatches;
+      const root = document.documentElement;
+      root.style.setProperty("--overlay-font-family", style.font_family);
+      root.style.setProperty("--overlay-text-color", style.colors.text);
+      root.style.setProperty("--overlay-muted-color", style.colors.muted);
+      root.style.setProperty("--overlay-accent-color", style.colors.accent);
+      root.style.setProperty("--overlay-current-score-color", style.colors.current_score);
+      root.style.setProperty("--overlay-result-color", style.colors.result);
+      root.style.setProperty("--overlay-background-color", style.colors.background);
+      root.style.setProperty("--overlay-text-font-size", `${style.font_sizes.text}px`);
+      upcomingOverlay.style.width = `${style.width}px`;
+      upcomingOverlay.style.height = `${style.height}px`;
+      upcomingOverlay.style.setProperty("--slim-opacity", String(style.opacity));
+      upcomingOverlay.style.setProperty("--slim-text-opacity", String(style.text_opacity));
+      upcomingOverlay.style.borderWidth = `${style.border.width}px`;
+      upcomingOverlay.style.borderStyle = style.border.width > 0 ? "solid" : "none";
+      upcomingOverlay.style.borderColor = style.border.color;
+
+      const matchups = state.upcomingMatches.map(
+        match => `${match.east} vs ${match.west}`
+      );
+      upcomingMatchups.textContent = matchups.length
+        ? matchups.join(" - ")
+        : "No upcoming matches";
+      upcomingOverlay.hidden = false;
+    }
+
+    function handleStateResponse(response) {
+      if (!response.ok) throw new Error("Unable to load upcoming matches");
+      return response.json();
+    }
+
+    fetch("/api/state")
+      .then(handleStateResponse)
+      .then(renderUpcoming)
+      .catch(error => console.error(error));
+
+    if (typeof io === "function") {
+      const socket = io();
+      socket.on("bout_update", renderUpcoming);
+      socket.on("connect_error", error => console.error("Overlay connection failed:", error));
+    } else {
+      window.setInterval(() => {
+        fetch("/api/state")
+          .then(handleStateResponse)
+          .then(renderUpcoming)
+          .catch(error => console.error(error));
+      }, 1000);
+    }
+  </script>
+</body>
+</html>
