@@ -275,6 +275,10 @@ def test_pages_and_kanji_lookup_are_available():
     assert client.get("/overlay").status_code == 404
     scoreboard_overlay = client.get("/scoreboard")
     assert scoreboard_overlay.status_code == 200
+    slimhalf_overlay = client.get("/scoreboard/slimhalf")
+    assert slimhalf_overlay.status_code == 200
+    slimfull_overlay = client.get("/scoreboard/slimfull")
+    assert slimfull_overlay.status_code == 200
     assert client.get("/main-overlay").status_code == 404
     assert client.get("/scoreboard-overlay").status_code == 404
     assert 'Makuuchi: 1' in scoreboard_overlay.text
@@ -292,6 +296,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert '"--overlay-border-color"' in scoreboard_overlay.text
     assert 'mainOverlay.style.setProperty("--scoreboard-opacity", String(style.opacity));' in scoreboard_overlay.text
     assert 'mainOverlay.style.setProperty("--scoreboard-text-opacity", String(style.text_opacity));' in scoreboard_overlay.text
+    assert "eastRecord.hidden = !settings.show_current_score;" in scoreboard_overlay.text
     main_styles = client.get("/static/overlay.css").text.split(
         ".pre-match-card {", maxsplit=1
     )[0]
@@ -310,7 +315,36 @@ def test_pages_and_kanji_lookup_are_available():
     assert "var(--scoreboard-opacity, 1)" in main_strip_styles
     assert "box-shadow" not in main_strip_styles
     assert "opacity: var(--scoreboard-text-opacity, 1);" in main_styles
+    assert 'class="configured-box slim-strip slimhalf"' in slimhalf_overlay.text
+    assert 'state.settings.overlay["slimhalf"]' in slimhalf_overlay.text
+    assert 'id="east-record"' in slimhalf_overlay.text
+    assert 'id="west-record"' in slimhalf_overlay.text
+    assert "eastRecord.textContent = formatRecord(state.east.record);" in slimhalf_overlay.text
+    assert "eastRecord.hidden = !settings.show_current_score;" in slimhalf_overlay.text
+    assert "slimOverlay.hidden = false;" in slimhalf_overlay.text
+    assert 'class="configured-box slim-strip slimfull"' in slimfull_overlay.text
+    assert 'state.settings.overlay["slimfull"]' in slimfull_overlay.text
+    assert 'id="east-record"' in slimfull_overlay.text
+    assert "Bout ${state.divisionBoutNumber} out of ${state.divisionTotal}" in slimfull_overlay.text
+    assert '`${state.division} (${shortDivision})`' in slimfull_overlay.text
+    assert 'id="head-to-head"' in slimfull_overlay.text
+    assert '"/api/pre-match-state"' in slimfull_overlay.text
+    assert 'Head to Head: First Meeting' in slimfull_overlay.text
+    assert 'Head to Head: ${headToHead.eastWins} - ${headToHead.westWins}' in slimfull_overlay.text
+    assert slimfull_overlay.text.index('id="head-to-head"') < slimfull_overlay.text.index('id="division"')
+    bout_details_index = slimfull_overlay.text.index('id="bout-details"')
+    assert bout_details_index < slimfull_overlay.text.index("</div>", bout_details_index)
     all_styles = client.get("/static/overlay.css").text
+    slimhalf_line_styles = all_styles.split(".slim-main-line {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    slimfull_line_styles = all_styles.split(
+        ".slimfull .slim-main-line {", maxsplit=1
+    )[1].split("}", maxsplit=1)[0]
+    assert "gap: 10px;" in slimhalf_line_styles
+    assert "gap: 10px;" in slimfull_line_styles
+    assert "var(--slim-opacity, 1)" in all_styles
+    assert "var(--slim-text-opacity, 1)" in all_styles
     assert "clamp(" not in all_styles
     assert "vw" not in all_styles
     assert "vh" not in all_styles
@@ -419,12 +453,16 @@ def test_pre_match_wrestler_names_align_independently_of_column_content_height()
 def test_overlay_routes_load_configured_custom_template_files(tmp_path):
     settings = default_settings()
     settings["templates"]["prematch"] = "custom_prematch.html"
+    settings["templates"]["slimhalf"] = "custom_slimhalf.html"
     settings_path = tmp_path / "config.yaml"
     write_config(settings_path, settings)
     custom_template_dir = tmp_path / "custom_templates"
     custom_template_dir.mkdir()
     (custom_template_dir / "custom_prematch.html").write_text(
         "<main>Custom pre-match overlay</main>", encoding="utf-8"
+    )
+    (custom_template_dir / "custom_slimhalf.html").write_text(
+        "<main>Custom slimhalf overlay</main>", encoding="utf-8"
     )
     app = create_app(
         schedule=FakeSchedule([make_bout(1, 10, 11)]),
@@ -435,6 +473,8 @@ def test_overlay_routes_load_configured_custom_template_files(tmp_path):
     client = app.test_client()
 
     assert b"Custom pre-match overlay" in client.get("/prematch").data
+    assert b"Custom slimhalf overlay" in client.get("/scoreboard/slimhalf").data
+    assert b"Sumo Slim Scoreboard" in client.get("/scoreboard/slimfull").data
     assert b"Makuuchi: 1" in client.get("/scoreboard").data
     assert client.get("/overlay").status_code == 404
     assert client.get("/scoreboard-overlay").status_code == 404
@@ -784,8 +824,46 @@ def test_overlay_dimensions_are_positive_integers_and_reject_position_settings()
         validate_settings(settings)
 
 
+def test_slim_scoreboard_defaults_and_independent_overrides():
+    settings = default_settings()
+    assert settings["overlay"]["slimhalf"]["width"] == 540
+    assert settings["overlay"]["slimhalf"]["height"] == 36
+    assert settings["overlay"]["slimfull"]["width"] == 1080
+    assert settings["overlay"]["slimfull"]["height"] == 36
+    assert settings["overlay"]["slimhalf"]["show_current_score"] is True
+    assert settings["overlay"]["slimfull"]["show_current_score"] is True
+
+    settings["overlay"]["slimhalf"]["width"] = 600
+    settings["overlay"]["slimhalf"]["opacity"] = 0.7
+    settings["overlay"]["slimhalf"]["show_current_score"] = False
+    settings["overlay"]["slimfull"]["font_sizes"]["text"] = 20
+    settings["overlay"]["slimfull"]["colors"]["accent"] = "#123456"
+    validated = validate_settings(settings)
+    assert validated["overlay"]["slimhalf"]["width"] == 600
+    assert validated["overlay"]["slimhalf"]["opacity"] == 0.7
+    assert validated["overlay"]["slimhalf"]["show_current_score"] is False
+    assert validated["overlay"]["slimfull"]["font_sizes"]["text"] == 20
+    assert validated["overlay"]["slimfull"]["colors"]["accent"] == "#123456"
+
+
+@pytest.mark.parametrize("overlay_name", ["slimhalf", "slimfull"])
+@pytest.mark.parametrize("show_current_score", ["true", 1, None])
+def test_slim_scoreboard_show_current_score_must_be_boolean(
+    overlay_name, show_current_score
+):
+    settings = default_settings()
+    settings["overlay"][overlay_name]["show_current_score"] = show_current_score
+
+    with pytest.raises(
+        SettingsError,
+        match=f"overlay.{overlay_name}.show_current_score must be true or false",
+    ):
+        validate_settings(settings)
+
+
 def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     settings = default_settings()
+    assert settings["overlay"]["scoreboard"]["show_current_score"] is True
     assert settings["basho_id"] == "202609"
     assert settings["control"] == {
         "mode": "automated",
@@ -848,6 +926,20 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
 
 
 @pytest.mark.parametrize(
+    "show_current_score", ["true", 1, None]
+)
+def test_scoreboard_show_current_score_must_be_boolean(show_current_score):
+    settings = default_settings()
+    settings["overlay"]["scoreboard"]["show_current_score"] = show_current_score
+
+    with pytest.raises(
+        SettingsError,
+        match="overlay.scoreboard.show_current_score must be true or false",
+    ):
+        validate_settings(settings)
+
+
+@pytest.mark.parametrize(
     ("font_sizes", "error"),
     [
         ("invalid", "font_sizes must be an object"),
@@ -900,7 +992,9 @@ def test_scoreboard_opacity_accepts_values_from_zero_through_one(opacity):
 
 @pytest.mark.parametrize("opacity_key", ["opacity", "text_opacity"])
 @pytest.mark.parametrize("opacity", [-0.1, 1.1, True, "0.5"])
-@pytest.mark.parametrize("overlay_name", ["scoreboard", "prematch"])
+@pytest.mark.parametrize(
+    "overlay_name", ["scoreboard", "prematch", "slimhalf", "slimfull"]
+)
 def test_overlay_opacity_settings_reject_values_outside_unit_interval(
     overlay_name, opacity_key, opacity
 ):
@@ -911,7 +1005,9 @@ def test_overlay_opacity_settings_reject_values_outside_unit_interval(
         validate_settings(settings)
 
 
-@pytest.mark.parametrize("overlay_name", ["scoreboard", "prematch"])
+@pytest.mark.parametrize(
+    "overlay_name", ["scoreboard", "prematch", "slimhalf", "slimfull"]
+)
 @pytest.mark.parametrize("opacity", [0, 0.5, 1])
 def test_overlay_text_opacity_accepts_values_from_zero_through_one(
     overlay_name, opacity

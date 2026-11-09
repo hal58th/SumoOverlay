@@ -40,6 +40,13 @@ DEFAULT_SCOREBOARD_FONT_SIZES = {
     "current_score": 36,
     "result": 40,
 }
+DEFAULT_SLIM_FONT_SIZES = {
+    "text": 18,
+    "muted": 16,
+    "accent": 16,
+    "current_score": 16,
+    "result": 16,
+}
 DEFAULT_PREMATCH_FONT_SIZES = {
     "text": 80,
     "muted": 36,
@@ -62,6 +69,7 @@ DEFAULT_PREMATCH_BORDER = {
     "width": 1,
     "color": "#ffffff33",
 }
+BOX_OVERLAYS = ("scoreboard", "prematch", "slimhalf", "slimfull")
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "basho_id": "202609",
@@ -112,6 +120,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "scoreboard": {
             "width": 993,
             "height": 158,
+            "show_current_score": True,
             "opacity": 1,
             "text_opacity": 1,
             "font_sizes": copy.deepcopy(DEFAULT_SCOREBOARD_FONT_SIZES),
@@ -137,10 +146,42 @@ DEFAULT_SETTINGS: dict[str, Any] = {
                 "background": "#141922",
             },
         },
+        "slimhalf": {
+            "width": 540,
+            "height": 36,
+            "show_current_score": True,
+            "opacity": 1,
+            "text_opacity": 1,
+            "font_sizes": copy.deepcopy(DEFAULT_SLIM_FONT_SIZES),
+            "border": copy.deepcopy(DEFAULT_SCOREBOARD_BORDER),
+            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+            "colors": {
+                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
+                "current_score": "#e8bd68",
+                "background": "#10141c",
+            },
+        },
+        "slimfull": {
+            "width": 1080,
+            "height": 36,
+            "show_current_score": True,
+            "opacity": 1,
+            "text_opacity": 1,
+            "font_sizes": copy.deepcopy(DEFAULT_SLIM_FONT_SIZES),
+            "border": copy.deepcopy(DEFAULT_SCOREBOARD_BORDER),
+            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+            "colors": {
+                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
+                "current_score": "#e8bd68",
+                "background": "#10141c",
+            },
+        },
     },
     "templates": {
         "scoreboard": "scoreboard_overlay.html",
         "prematch": "prematch_overlay.html",
+        "slimhalf": "slim_scoreboard_overlay.html",
+        "slimfull": "slim_scoreboard_overlay.html",
     },
 }
 
@@ -457,13 +498,13 @@ def validate_settings(raw: Any) -> dict[str, Any]:
     overlay = settings.get("overlay")
     if not isinstance(overlay, dict):
         raise SettingsError("overlay must be a YAML mapping")
-    unknown_overlay_keys = set(overlay) - {"control", "scoreboard", "prematch"}
+    overlay_defaults = default_settings()["overlay"]
+    unknown_overlay_keys = set(overlay) - set(overlay_defaults)
     if unknown_overlay_keys:
         raise SettingsError(
             f"Unknown overlay setting: {sorted(unknown_overlay_keys)[0]}"
         )
-    overlay_defaults = default_settings()["overlay"]
-    for key in ("control", "scoreboard", "prematch"):
+    for key in overlay_defaults:
         section = overlay.get(key, {})
         if not isinstance(section, dict):
             raise SettingsError(f"overlay.{key} must be an object")
@@ -471,8 +512,10 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         if key != "control":
             allowed_keys.update({"width", "height", "border"})
         allowed_keys.add("font_sizes")
-        if key in ("scoreboard", "prematch"):
+        if key in BOX_OVERLAYS:
             allowed_keys.update({"opacity", "text_opacity"})
+        if key in ("scoreboard", "slimhalf", "slimfull"):
+            allowed_keys.add("show_current_score")
         unknown_keys = set(section) - allowed_keys
         if unknown_keys:
             raise SettingsError(
@@ -495,21 +538,21 @@ def validate_settings(raw: Any) -> dict[str, Any]:
                 **overlay.get(key, {}).get("font_sizes", {}),
             },
         }
-        for key in ("control", "scoreboard", "prematch")
+        for key in overlay_defaults
     }
-    for key in ("scoreboard", "prematch"):
+    for key in BOX_OVERLAYS:
         raw_border = overlay.get(key, {}).get("border")
         overlay[key]["border"] = _validate_overlay_border(
             raw_border, overlay_defaults[key]["border"], f"overlay.{key}"
         )
-    for key in ("control", "scoreboard", "prematch"):
+    for key in overlay_defaults:
         extra_colors = {"current_score": "#e8bd68"}
-        if key in ("scoreboard", "prematch") and "border" in overlay.get(key, {}).get("colors", {}):
+        if key in BOX_OVERLAYS and "border" in overlay.get(key, {}).get("colors", {}):
             extra_colors["border"] = overlay[key]["border"]["color"]
         overlay[key] = _validate_overlay_style(
             overlay[key], f"overlay.{key}", extra_colors=extra_colors
         )
-        if key in ("scoreboard", "prematch") and "border" in overlay.get(key, {}).get("colors", {}):
+        if key in BOX_OVERLAYS and "border" in overlay.get(key, {}).get("colors", {}):
             raw_b = overlay.get(key, {}).get("border")
             if not isinstance(raw_b, dict) or "color" not in raw_b:
                 overlay[key]["border"]["color"] = overlay[key]["colors"]["border"]
@@ -517,12 +560,14 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         "control": DEFAULT_CONTROL_FONT_SIZES,
         "scoreboard": DEFAULT_SCOREBOARD_FONT_SIZES,
         "prematch": DEFAULT_PREMATCH_FONT_SIZES,
+        "slimhalf": DEFAULT_SLIM_FONT_SIZES,
+        "slimfull": DEFAULT_SLIM_FONT_SIZES,
     }
     for key, defaults in font_size_defaults.items():
         overlay[key]["font_sizes"] = _validate_overlay_font_sizes(
             overlay[key]["font_sizes"], defaults, f"overlay.{key}"
         )
-    for key in ("scoreboard", "prematch"):
+    for key in BOX_OVERLAYS:
         for dimension in ("width", "height"):
             value = overlay[key].get(dimension)
             overlay[key][dimension] = _positive_number(
@@ -530,7 +575,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             )
             if not isinstance(overlay[key][dimension], int):
                 raise SettingsError(f"overlay.{key}.{dimension} must be an integer")
-    for key in ("scoreboard", "prematch"):
+    for key in BOX_OVERLAYS:
         for opacity_key in ("opacity", "text_opacity"):
             opacity = overlay[key][opacity_key]
             if (
@@ -542,15 +587,21 @@ def validate_settings(raw: Any) -> dict[str, Any]:
                 raise SettingsError(
                     f"overlay.{key}.{opacity_key} must be a number from 0 through 1"
                 )
+    for key in ("scoreboard", "slimhalf", "slimfull"):
+        if not isinstance(overlay[key]["show_current_score"], bool):
+            raise SettingsError(
+                f"overlay.{key}.show_current_score must be true or false"
+            )
     settings["overlay"] = overlay
 
     templates = settings.get("templates")
     if not isinstance(templates, dict):
         raise SettingsError("templates must be a YAML mapping")
-    unknown_template_keys = set(templates) - {"scoreboard", "prematch"}
+    template_defaults = default_settings()["templates"]
+    unknown_template_keys = set(templates) - set(template_defaults)
     if unknown_template_keys:
         raise SettingsError(f"Unknown template setting: {sorted(unknown_template_keys)[0]}")
-    templates = {**default_settings()["templates"], **templates}
+    templates = {**template_defaults, **templates}
     for key, value in templates.items():
         if (
             not isinstance(value, str)

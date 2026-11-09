@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumo Slim Scoreboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=13) }}">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <main id="slim-overlay" class="configured-box slim-strip {{ layout }}" hidden aria-live="polite">
+    <div class="slim-main-line">
+      <span id="east-name" class="slim-name"></span>
+      <span id="east-rank" class="slim-rank"></span>
+      <span id="east-record" class="slim-record"></span>
+      <span class="slim-versus">vs.</span>
+      <span id="west-name" class="slim-name"></span>
+      <span id="west-rank" class="slim-rank"></span>
+      <span id="west-record" class="slim-record"></span>
+      <span class="slim-divider">-</span>
+      {% if layout == "slimfull" %}
+      <span id="head-to-head" class="slim-head-to-head"></span>
+      {% endif %}
+      <span id="division" class="slim-division"></span>
+      {% if layout == "slimfull" %}
+      <span id="bout-details" class="slim-bout-details"></span>
+      {% endif %}
+    </div>
+  </main>
+  <script>
+    const slimOverlay = document.getElementById("slim-overlay");
+    const divisionNumbers = {
+      Makuuchi: 1,
+      Juryo: 2,
+      Makushita: 3,
+      Sandanme: 4,
+      Jonidan: 5,
+      Jonokuchi: 6
+    };
+
+    function abbreviatedRank(rank) {
+      if (!rank) return "—";
+      const match = rank.match(/^(Yokozuna|Ozeki|Sekiwake|Komusubi|Maegashira|Juryo|Makushita|Sandanme|Jonidan|Jonokuchi)\s*(\d+)?(?:\s+(East|West))?/i);
+      if (!match) return rank;
+      const abbreviations = {
+        yokozuna: "Y", ozeki: "O", sekiwake: "S", komusubi: "K",
+        maegashira: "M", juryo: "J", makushita: "Ms", sandanme: "Sd",
+        jonidan: "Jd", jonokuchi: "Jk"
+      };
+      const side = match[3] ? ` ${match[3][0]}` : "";
+      return `${abbreviations[match[1].toLowerCase()]}${match[2] || ""}${side}`;
+    }
+
+    function applyOverlayStyle(style) {
+      const root = document.documentElement;
+      root.style.setProperty("--overlay-font-family", style.font_family);
+      root.style.setProperty("--overlay-text-color", style.colors.text);
+      root.style.setProperty("--overlay-muted-color", style.colors.muted);
+      root.style.setProperty("--overlay-accent-color", style.colors.accent);
+      root.style.setProperty("--overlay-current-score-color", style.colors.current_score);
+      root.style.setProperty("--overlay-result-color", style.colors.result);
+      root.style.setProperty("--overlay-background-color", style.colors.background);
+      root.style.setProperty("--overlay-text-font-size", `${style.font_sizes.text}px`);
+      root.style.setProperty("--overlay-muted-font-size", `${style.font_sizes.muted}px`);
+      root.style.setProperty("--overlay-accent-font-size", `${style.font_sizes.accent}px`);
+      root.style.setProperty("--overlay-current-score-font-size", `${style.font_sizes.current_score}px`);
+      root.style.setProperty("--overlay-result-font-size", `${style.font_sizes.result}px`);
+      slimOverlay.style.width = `${style.width}px`;
+      slimOverlay.style.height = `${style.height}px`;
+      slimOverlay.style.setProperty("--slim-opacity", String(style.opacity));
+      slimOverlay.style.setProperty("--slim-text-opacity", String(style.text_opacity));
+      const borderWidth = style.border.width;
+      slimOverlay.style.borderWidth = `${borderWidth}px`;
+      slimOverlay.style.borderStyle = borderWidth > 0 ? "solid" : "none";
+      slimOverlay.style.borderColor = style.border.color;
+    }
+
+    function renderBout(state) {
+      if (!state.settings || !state.settings.overlay) return;
+      const settings = state.settings.overlay["{{ layout }}"];
+      applyOverlayStyle(settings);
+      document.getElementById("east-name").textContent = state.east.name;
+      document.getElementById("west-name").textContent = state.west.name;
+      document.getElementById("east-rank").textContent = abbreviatedRank(state.east.rank);
+      document.getElementById("west-rank").textContent = abbreviatedRank(state.west.rank);
+      const formatRecord = record =>
+        record ? `${record.wins}-${record.losses}` : "—";
+      const eastRecord = document.getElementById("east-record");
+      const westRecord = document.getElementById("west-record");
+      eastRecord.hidden = !settings.show_current_score;
+      westRecord.hidden = !settings.show_current_score;
+      eastRecord.textContent = formatRecord(state.east.record);
+      westRecord.textContent = formatRecord(state.west.record);
+      if ("{{ layout }}" === "slimfull") {
+        const headToHead = state.headToHead;
+        document.getElementById("head-to-head").textContent = !headToHead
+          ? "Head to Head: unavailable"
+          : headToHead.eastWins === 0 && headToHead.westWins === 0
+            ? "Head to Head: First Meeting"
+            : `Head to Head: ${headToHead.eastWins} - ${headToHead.westWins}`;
+        const boutDetails = document.getElementById("bout-details");
+        boutDetails.textContent = `Bout ${state.divisionBoutNumber} out of ${state.divisionTotal}`;
+      }
+      const divisionNumber = state.divisionNumber || divisionNumbers[state.division] || "";
+      const shortDivision = `DIV ${divisionNumber}`;
+      document.getElementById("division").textContent =
+        "{{ layout }}" === "slimfull"
+          ? `${state.division} (${shortDivision})`
+          : shortDivision;
+      slimOverlay.hidden = false;
+    }
+
+    function handleStateResponse(response) {
+      if (!response.ok) throw new Error("Unable to load bout state");
+      return response.json();
+    }
+
+    const stateUrl = "{{ layout }}" === "slimfull"
+      ? "/api/pre-match-state"
+      : "/api/state";
+
+    fetch(stateUrl)
+      .then(handleStateResponse)
+      .then(renderBout)
+      .catch(error => console.error(error));
+
+    if (typeof io === "function") {
+      const socket = io();
+      socket.on("bout_update", renderBout);
+      socket.on("bout_result", renderBout);
+      socket.on("connect_error", error => console.error("Overlay connection failed:", error));
+    } else {
+      window.setInterval(() => {
+        fetch(stateUrl)
+          .then(handleStateResponse)
+          .then(renderBout)
+          .catch(error => console.error(error));
+      }, 1000);
+    }
+  </script>
+</body>
+</html>

@@ -126,6 +126,10 @@
       applyOverlayStyle(settings);
       mainOverlay.style.width = `${state.settings.overlay.scoreboard.width}px`;
       mainOverlay.style.height = `${state.settings.overlay.scoreboard.height}px`;
+      const eastRecord = document.getElementById("east-record");
+      const westRecord = document.getElementById("west-record");
+      eastRecord.hidden = !settings.show_current_score;
+      westRecord.hidden = !settings.show_current_score;
       document.getElementById("division").textContent = divisionLabel(state.division);
       document.getElementById("east-name").textContent = state.east.name;
       document.getElementById("west-name").textContent = state.west.name;
