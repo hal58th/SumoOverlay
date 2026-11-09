@@ -241,6 +241,18 @@ def create_app(
     def scoreboard_overlay() -> str:
         return render_template(current_settings()["templates"]["scoreboard"])
 
+    @app.get("/scoreboard/slimhalf")
+    def slimhalf_scoreboard_overlay() -> str:
+        return render_template(
+            current_settings()["templates"]["slimhalf"], layout="slimhalf"
+        )
+
+    @app.get("/scoreboard/slimfull")
+    def slimfull_scoreboard_overlay() -> str:
+        return render_template(
+            current_settings()["templates"]["slimfull"], layout="slimfull"
+        )
+
     @app.get("/control")
     def control() -> str:
         return render_template("control.html")

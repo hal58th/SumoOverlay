@@ -35,6 +35,8 @@ With the app running, open:
 
 - Control page: <http://127.0.0.1:5000/control>
 - Scoreboard overlay: <http://127.0.0.1:5000/scoreboard>
+- Slim half-width scoreboard: <http://127.0.0.1:5000/scoreboard/slimhalf>
+- Slim full-width scoreboard: <http://127.0.0.1:5000/scoreboard/slimfull>
 - Pre-match overlay: <http://127.0.0.1:5000/prematch>
 - OCR calibration tool: <http://127.0.0.1:5000/calibrate>
 
@@ -100,10 +102,12 @@ Japanese OCR can confuse similar-looking or uncommon kanji. If the Control page 
 
 ## OBS Studio
 
-In OBS, add two **Browser** sources:
+In OBS, add **Browser** sources for the overlays you want to use:
 
 1. Scoreboard, always-on scoreboard overlay: `http://127.0.0.1:5000/scoreboard`. Set the Browser Source width and height to `overlay.scoreboard.width` and `overlay.scoreboard.height` in `config.yaml`.
 2. Pre-match H2H card: `http://127.0.0.1:5000/prematch`. Set its Browser Source width and height to `overlay.prematch.width` and `overlay.prematch.height`.
+3. Slim half-width scoreboard: `http://127.0.0.1:5000/scoreboard/slimhalf`. Defaults to 540 by 36 pixels and shows names, abbreviated ranks, current scores, and division.
+4. Slim full-width scoreboard: `http://127.0.0.1:5000/scoreboard/slimfull`. Defaults to 1080 by 36 pixels and shows current scores, head-to-head score (or “First Meeting”), division name, and bout count on the same line.
 
 In OBS, position each Browser Source on the scene as desired. The overlay content is rendered at the configured dimensions in fixed CSS pixels and does not scale to fit the browser viewport. To change an overlay's rendered size, edit its width and height in `config.yaml`, then use those same values for the OBS Browser Source dimensions.
 
@@ -129,13 +133,16 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `control.pre_match_pinned` | `true` or `false`. When true, keeps the pre-match overlay visible until you hide it from the Control page. |
 | `overlay.scoreboard.width`, `overlay.scoreboard.height` | Fixed pixel width and height for the main overlay and its OBS Browser Source. |
 | `overlay.prematch.width`, `overlay.prematch.height` | Fixed pixel width and height for the pre-match overlay and its OBS Browser Source. |
-| `overlay.scoreboard.border`, `overlay.prematch.border` | Border customization for each overlay. Accepts `width` (or `thickness`) in pixels and hex `color` (e.g. `width: 1`, `color: "#ffffff38"`). Set `width: 0` or `border: false` to disable the border completely. The scoreboard overlay border is turned off by default (`width: 0`); the pre-match overlay defaults to a 1px border. |
+| `overlay.slimhalf.width`, `overlay.slimhalf.height` | Fixed pixel size of the half-width slim scoreboard. Defaults to 540 by 36. |
+| `overlay.slimfull.width`, `overlay.slimfull.height` | Fixed pixel size of the full-width slim scoreboard. Defaults to 1080 by 36. |
+| `overlay.scoreboard.show_current_score`, `overlay.slimhalf.show_current_score`, `overlay.slimfull.show_current_score` | Whether each scoreboard shows wrestler current scores. Defaults to `true`. |
+| `overlay.scoreboard.border`, `overlay.prematch.border`, `overlay.slimhalf.border`, `overlay.slimfull.border` | Border customization for each overlay. Accepts `width` (or `thickness`) in pixels and hex `color` (e.g. `width: 1`, `color: "#ffffff38"`). Set `width: 0` or `border: false` to disable the border completely. The scoreboard and slim scoreboard borders default to 0px; the pre-match overlay defaults to a 1px border. |
 | `overlay.control.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on the Control page. |
-| `overlay.scoreboard.font_sizes`, `overlay.prematch.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on each overlay. |
-| `overlay.scoreboard.opacity`, `overlay.prematch.opacity` | Background opacity of the scoreboard or pre-match overlay, from `0` (transparent) to `1` (opaque). The scoreboard defaults to `1` (opaque); the pre-match overlay defaults to `0.95`. |
-| `overlay.scoreboard.text_opacity`, `overlay.prematch.text_opacity` | Text opacity for the scoreboard or pre-match overlay, from `0` (transparent) to `1` (opaque). Both default to `1`; background opacity is unchanged. |
-| `overlay.control`, `overlay.scoreboard`, `overlay.prematch` | Independent font and background settings for the Control page, pre-match overlay, and scoreboard overlay. Each accepts `font_family` and `colors` as described below. |
-| `templates.scoreboard`, `templates.prematch` | HTML filenames for the overlays. The app searches `custom_templates` first, then the built-in `templates` folder. |
+| `overlay.scoreboard.font_sizes`, `overlay.prematch.font_sizes`, `overlay.slimhalf.font_sizes`, `overlay.slimfull.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on each overlay. |
+| `overlay.scoreboard.opacity`, `overlay.prematch.opacity`, `overlay.slimhalf.opacity`, `overlay.slimfull.opacity` | Background opacity, from `0` (transparent) to `1` (opaque). Scoreboard and slim scoreboard overlays default to `1`; the pre-match overlay defaults to `0.95`. |
+| `overlay.scoreboard.text_opacity`, `overlay.prematch.text_opacity`, `overlay.slimhalf.text_opacity`, `overlay.slimfull.text_opacity` | Text opacity for each overlay, from `0` (transparent) to `1` (opaque). All default to `1`; background opacity is unchanged. |
+| `overlay.control`, `overlay.scoreboard`, `overlay.prematch`, `overlay.slimhalf`, `overlay.slimfull` | Independent font and background settings for the Control page and overlays. Each accepts `font_family` and `colors` as described below. |
+| `templates.scoreboard`, `templates.prematch`, `templates.slimhalf`, `templates.slimfull` | HTML filenames for the overlays. The app searches `custom_templates` first, then the built-in `templates` folder. |
 | `ocr.enabled` | Enables the OCR scanner when the app is started normally. |
 | `ocr.monitor` | Monitor number, used to select which monitor to capture from, starting at `1` for the first monitor (monitor `0` is the combined virtual desktop and is not used). |
 | `ocr.interval_seconds` | Delay between OCR scans. |
@@ -144,7 +151,7 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `ocr.capture_regions.scoresheet` | Rectangle around the sumo broadcast scoreboard, in pixels relative to the selected monitor. |
 | `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `ocr.capture_regions.scoresheet`. |
 
-Each of `overlay.control`, `overlay.scoreboard`, and `overlay.prematch` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and bout metadata), `current_score` (wrestlers' current records), `result` (announced bout results and errors), and `background` (background color). All three pages accept `font_sizes` in pixels for their text groups. On the Control page, smaller labels retain their proportions to the main `text` and `muted` sizes. `accent` and `current_score` have independent sizes and colors; smaller labels retain their proportions relative to the main text in that color group. For example:
+Each of `overlay.control`, `overlay.scoreboard`, `overlay.prematch`, `overlay.slimhalf`, and `overlay.slimfull` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and bout metadata), `current_score` (wrestlers' current records), `result` (announced bout results and errors), and `background` (background color). All overlay sections accept `font_sizes` in pixels for their text groups. On the Control page, smaller labels retain their proportions to the main `text` and `muted` sizes. `accent` and `current_score` have independent sizes and colors; smaller labels retain their proportions relative to the main text in that color group. For example:
 
 ```yaml
 overlay:
