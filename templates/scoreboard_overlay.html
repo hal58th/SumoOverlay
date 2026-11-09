@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Main Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=11) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=12) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -40,6 +40,8 @@
       root.style.setProperty("--overlay-current-score-color", style.colors.current_score);
       root.style.setProperty("--overlay-result-color", style.colors.result);
       root.style.setProperty("--overlay-background-color", style.colors.background);
+      mainOverlay.style.setProperty("--scoreboard-opacity", String(style.opacity));
+      mainOverlay.style.setProperty("--scoreboard-text-opacity", String(style.text_opacity));
       root.style.setProperty("--overlay-text-font-size", `${style.font_sizes.text}px`);
       root.style.setProperty("--overlay-muted-font-size", `${style.font_sizes.muted}px`);
       root.style.setProperty("--overlay-accent-font-size", `${style.font_sizes.accent}px`);

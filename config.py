@@ -41,7 +41,7 @@ DEFAULT_SCOREBOARD_FONT_SIZES = {
     "result": 40,
 }
 DEFAULT_PREMATCH_FONT_SIZES = {
-    "text": 88,
+    "text": 80,
     "muted": 36,
     "accent": 54,
     "current_score": 38,
@@ -110,8 +110,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "font_sizes": copy.deepcopy(DEFAULT_CONTROL_FONT_SIZES),
         },
         "scoreboard": {
-            "width": 791,
-            "height": 175,
+            "width": 993,
+            "height": 158,
+            "opacity": 1,
+            "text_opacity": 1,
             "font_sizes": copy.deepcopy(DEFAULT_SCOREBOARD_FONT_SIZES),
             "border": copy.deepcopy(DEFAULT_SCOREBOARD_BORDER),
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
@@ -125,6 +127,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "width": 1656,
             "height": 800,
             "opacity": 0.95,
+            "text_opacity": 1,
             "font_sizes": copy.deepcopy(DEFAULT_PREMATCH_FONT_SIZES),
             "border": copy.deepcopy(DEFAULT_PREMATCH_BORDER),
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
@@ -468,8 +471,8 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         if key != "control":
             allowed_keys.update({"width", "height", "border"})
         allowed_keys.add("font_sizes")
-        if key == "prematch":
-            allowed_keys.add("opacity")
+        if key in ("scoreboard", "prematch"):
+            allowed_keys.update({"opacity", "text_opacity"})
         unknown_keys = set(section) - allowed_keys
         if unknown_keys:
             raise SettingsError(
@@ -527,14 +530,18 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             )
             if not isinstance(overlay[key][dimension], int):
                 raise SettingsError(f"overlay.{key}.{dimension} must be an integer")
-    opacity = overlay["prematch"]["opacity"]
-    if (
-        isinstance(opacity, bool)
-        or not isinstance(opacity, (int, float))
-        or not math.isfinite(opacity)
-        or not 0 <= opacity <= 1
-    ):
-        raise SettingsError("overlay.prematch.opacity must be a number from 0 through 1")
+    for key in ("scoreboard", "prematch"):
+        for opacity_key in ("opacity", "text_opacity"):
+            opacity = overlay[key][opacity_key]
+            if (
+                isinstance(opacity, bool)
+                or not isinstance(opacity, (int, float))
+                or not math.isfinite(opacity)
+                or not 0 <= opacity <= 1
+            ):
+                raise SettingsError(
+                    f"overlay.{key}.{opacity_key} must be a number from 0 through 1"
+                )
     settings["overlay"] = overlay
 
     templates = settings.get("templates")

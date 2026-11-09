@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Pre-Match Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=11) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=12) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -94,6 +94,10 @@
         preMatchOverlay.style.width = `${width}px`;
         preMatchOverlay.style.height = `${height}px`;
         preMatchOverlay.style.setProperty("--pre-match-opacity", String(opacity));
+        preMatchOverlay.style.setProperty(
+          "--prematch-text-opacity",
+          String(style.text_opacity)
+        );
         if (style.border) {
           const borderWidth = style.border.width !== undefined ? style.border.width : 1;
           const borderColor = style.border.color || "rgb(255 255 255 / 20%)";
