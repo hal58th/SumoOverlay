@@ -13,6 +13,8 @@
   --prematch-border-width: 1px;
   --prematch-border-style: solid;
   --prematch-border-color: rgb(255 255 255 / 20%);
+  --scoreboard-opacity: 1;
+  --scoreboard-text-opacity: 1;
   font-family: var(--overlay-font-family);
 }
 
@@ -52,8 +54,20 @@ body {
   border-radius: 0;
   background: #10141c;
   background: var(--overlay-background-color);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
+  background: color-mix(
+    in srgb,
+    var(--overlay-background-color) calc(var(--scoreboard-opacity, 1) * 100%),
+    transparent
+  );
   font-weight: 700;
+}
+
+.main-name,
+.main-division,
+.main-record,
+.main-rank,
+.main-versus {
+  opacity: var(--scoreboard-text-opacity, 1);
 }
 
 .main-division {
@@ -148,7 +162,17 @@ body {
     var(--overlay-background-color) calc(var(--pre-match-opacity, 0.5) * 100%),
     transparent
   );
-  box-shadow: 0 10px 32px rgb(0 0 0 / 38%);
+}
+
+.bout-meta,
+.wrestler-name,
+.rank,
+.record,
+.wrestler-profile,
+.versus,
+.head-to-head-score,
+.overlay-error {
+  opacity: var(--prematch-text-opacity, 1);
 }
 
 .pre-match-card[hidden] {
@@ -286,7 +310,11 @@ body {
   height: 42px;
   place-items: center;
   border-radius: 50%;
-  color: var(--overlay-text-color);
+  color: color-mix(
+    in srgb,
+    var(--overlay-text-color) calc(var(--prematch-text-opacity, 1) * 100%),
+    transparent
+  );
   font-size: var(--prematch-history-font-size);
   line-height: 1;
 }

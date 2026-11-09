@@ -290,6 +290,8 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'state.announcedWinner' in scoreboard_overlay.text
     assert '"--overlay-border-width"' in scoreboard_overlay.text
     assert '"--overlay-border-color"' in scoreboard_overlay.text
+    assert 'mainOverlay.style.setProperty("--scoreboard-opacity", String(style.opacity));' in scoreboard_overlay.text
+    assert 'mainOverlay.style.setProperty("--scoreboard-text-opacity", String(style.text_opacity));' in scoreboard_overlay.text
     main_styles = client.get("/static/overlay.css").text.split(
         ".pre-match-card {", maxsplit=1
     )[0]
@@ -305,6 +307,9 @@ def test_pages_and_kanji_lookup_are_available():
         "}", maxsplit=1
     )[0]
     assert "background: #10141c;" in main_strip_styles
+    assert "var(--scoreboard-opacity, 1)" in main_strip_styles
+    assert "box-shadow" not in main_strip_styles
+    assert "opacity: var(--scoreboard-text-opacity, 1);" in main_styles
     all_styles = client.get("/static/overlay.css").text
     assert "clamp(" not in all_styles
     assert "vw" not in all_styles
@@ -314,6 +319,7 @@ def test_pages_and_kanji_lookup_are_available():
         "}", maxsplit=1
     )[0]
     assert "justify-content: flex-start;" in pre_match_card_styles
+    assert "box-shadow" not in pre_match_card_styles
     assert (
         "const { width, height, opacity } = state.settings.overlay.prematch;"
         in pre_match_html
@@ -330,6 +336,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert "state.settings.preMatchUnsalariedSeconds" in pre_match_html
     assert 'preMatchOverlay.style.width = `${width}px`;' in pre_match_html
     assert "preMatchOverlay.style.setProperty(\"--pre-match-opacity\", String(opacity));" in pre_match_html
+    assert 'String(style.text_opacity)' in pre_match_html
     assert "fitNameToWidth" not in pre_match_html
     assert '"--prematch-border-width"' in pre_match_html
     assert '"--prematch-border-color"' in pre_match_html
@@ -341,6 +348,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert "--overlay-border-style: none;" in all_styles
     assert "rgb(20 25 34 / var(--pre-match-opacity, 0.5))" in all_styles
     assert "rgb(37 42 51 / var(--pre-match-opacity, 0.5))" in all_styles
+    assert "opacity: var(--prematch-text-opacity, 1);" in all_styles
     control = client.get("/control")
     assert control.status_code == 200
     assert "style.font_sizes.current_score" in control.text
@@ -794,6 +802,9 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     }
     assert settings["overlay"]["scoreboard"]["width"] == 791
     assert settings["overlay"]["scoreboard"]["height"] == 175
+    assert settings["overlay"]["scoreboard"]["opacity"] == 1
+    assert settings["overlay"]["scoreboard"]["text_opacity"] == 1
+    assert settings["overlay"]["prematch"]["text_opacity"] == 1
     assert settings["overlay"]["scoreboard"]["font_sizes"] == {
         "text": 45,
         "muted": 36,
@@ -862,12 +873,56 @@ def test_pre_match_opacity_rejects_values_outside_unit_interval(opacity):
         validate_settings(settings)
 
 
+@pytest.mark.parametrize("opacity", [-0.1, 1.1, True, "0.5"])
+def test_scoreboard_opacity_rejects_values_outside_unit_interval(opacity):
+    settings = default_settings()
+    settings["overlay"]["scoreboard"]["opacity"] = opacity
+
+    with pytest.raises(SettingsError, match="overlay.scoreboard.opacity"):
+        validate_settings(settings)
+
+
 @pytest.mark.parametrize("opacity", [0, 0.5, 1])
 def test_pre_match_opacity_accepts_values_from_zero_through_one(opacity):
     settings = default_settings()
     settings["overlay"]["prematch"]["opacity"] = opacity
 
     assert validate_settings(settings)["overlay"]["prematch"]["opacity"] == opacity
+
+
+@pytest.mark.parametrize("opacity", [0, 0.5, 1])
+def test_scoreboard_opacity_accepts_values_from_zero_through_one(opacity):
+    settings = default_settings()
+    settings["overlay"]["scoreboard"]["opacity"] = opacity
+
+    assert validate_settings(settings)["overlay"]["scoreboard"]["opacity"] == opacity
+
+
+@pytest.mark.parametrize("opacity_key", ["opacity", "text_opacity"])
+@pytest.mark.parametrize("opacity", [-0.1, 1.1, True, "0.5"])
+@pytest.mark.parametrize("overlay_name", ["scoreboard", "prematch"])
+def test_overlay_opacity_settings_reject_values_outside_unit_interval(
+    overlay_name, opacity_key, opacity
+):
+    settings = default_settings()
+    settings["overlay"][overlay_name][opacity_key] = opacity
+
+    with pytest.raises(SettingsError, match=f"overlay.{overlay_name}.{opacity_key}"):
+        validate_settings(settings)
+
+
+@pytest.mark.parametrize("overlay_name", ["scoreboard", "prematch"])
+@pytest.mark.parametrize("opacity", [0, 0.5, 1])
+def test_overlay_text_opacity_accepts_values_from_zero_through_one(
+    overlay_name, opacity
+):
+    settings = default_settings()
+    settings["overlay"][overlay_name]["text_opacity"] = opacity
+
+    assert (
+        validate_settings(settings)["overlay"][overlay_name]["text_opacity"]
+        == opacity
+    )
 
 
 def test_scoreboard_and_prematch_border_defaults():
