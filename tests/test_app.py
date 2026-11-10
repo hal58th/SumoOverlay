@@ -1,8 +1,9 @@
 import logging
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 import yaml
@@ -947,6 +948,32 @@ def test_ocr_name_boxes_use_pixels_relative_to_capture_region():
     assert validated["ocr"]["name_boxes"] == settings["ocr"]["name_boxes"]
 
 
+def test_alternate_ocr_name_boxes_are_optional_and_bounded_by_capture():
+    settings = default_settings()
+    assert validate_settings(settings)["ocr"]["alternate_name_boxes"] is None
+
+    settings["ocr"]["capture_regions"]["scoresheet"] = {
+        "x": 100,
+        "y": 50,
+        "width": 800,
+        "height": 400,
+    }
+    settings["ocr"]["name_boxes"] = {
+        "left": {"x": 20, "y": 20, "width": 130, "height": 45},
+        "right": {"x": 400, "y": 20, "width": 130, "height": 45},
+    }
+    settings["ocr"]["alternate_name_boxes"] = {
+        "left": {"x": 20, "y": 200, "width": 130, "height": 45},
+        "right": {"x": 400, "y": 200, "width": 130, "height": 45},
+    }
+    validated = validate_settings(settings)
+    assert validated["ocr"]["alternate_name_boxes"] == settings["ocr"]["alternate_name_boxes"]
+
+    settings["ocr"]["alternate_name_boxes"]["right"]["x"] = 700
+    with pytest.raises(SettingsError, match="alternate_name_boxes.right must fit inside"):
+        validate_settings(settings)
+
+
 def test_capture_regions_must_be_nested_under_ocr():
     settings = default_settings()
     settings["capture_regions"] = {
@@ -1701,6 +1728,45 @@ def test_ocr_match_selects_bout_when_only_one_name_is_recognized(tmp_path):
     assert app.test_client().get("/api/state").json["index"] == 1
 
 
+def test_ocr_match_uses_alternate_pair_when_it_matches_schedule(tmp_path):
+    class OCRSchedule(FakeSchedule):
+        def find_bout_index_by_kanji(self, left_name, right_name):
+            return 1 if (left_name, right_name) == ("別左", "別右") else None
+
+    settings = default_settings()
+    settings["ocr"]["stable_readings"] = 1
+    settings["ocr"]["alternate_name_boxes"] = {
+        "left": {"x": 20, "y": 200, "width": 100, "height": 50},
+        "right": {"x": 200, "y": 200, "width": 100, "height": 50},
+    }
+    settings_path = tmp_path / "config.yaml"
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=OCRSchedule([make_bout(1, 10, 11), make_bout(2, 12, 13)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+
+    scanner = app.extensions["ocr_scanner"]
+    scanner._capture_and_read = lambda current_settings: (
+        (("未読左", 0.9), ("未読右", 0.9)),
+        (("別左", 0.9), ("別右", 0.9)),
+    )
+    on_match = scanner.on_match
+
+    def stop_after_match(left_name, right_name):
+        state = on_match(left_name, right_name)
+        scanner._stop.set()
+        return state
+
+    scanner.on_match = stop_after_match
+    scanner._run()
+
+    assert app.test_client().get("/api/state").json["index"] == 1
+    assert scanner.status()["state"] == "matched"
+
+
 def test_ocr_retriggers_pre_match_for_the_already_selected_bout(tmp_path):
     class OCRSchedule(FakeSchedule):
         def find_bout_index_by_kanji(self, left_name, right_name):
@@ -2206,6 +2272,10 @@ def test_save_ocr_calibration_endpoint(tmp_path):
                 "capture": {"x": 10, "y": 20, "width": 800, "height": 200},
                 "left": {"x": 5, "y": 5, "width": 100, "height": 50},
                 "right": {"x": 200, "y": 5, "width": 100, "height": 50},
+                "alternate": {
+                    "left": {"x": 10, "y": 120, "width": 120, "height": 50},
+                    "right": {"x": 300, "y": 120, "width": 120, "height": 50},
+                },
             },
         )
         assert response.status_code == 200
@@ -2213,6 +2283,8 @@ def test_save_ocr_calibration_endpoint(tmp_path):
         assert saved_ocr["capture_regions"]["scoresheet"]["x"] == 10
         assert saved_ocr["name_boxes"]["left"]["x"] == 5
         assert saved_ocr["name_boxes"]["right"]["x"] == 200
+        assert saved_ocr["alternate_name_boxes"]["left"]["x"] == 10
+        assert saved_ocr["alternate_name_boxes"]["right"]["y"] == 120
 
         # Without capture (nudge only updates name boxes)
         response2 = client.post(
@@ -2227,6 +2299,7 @@ def test_save_ocr_calibration_endpoint(tmp_path):
         assert saved_ocr2["capture_regions"]["scoresheet"]["x"] == 10
         assert saved_ocr2["name_boxes"]["left"]["x"] == 15
         assert saved_ocr2["name_boxes"]["right"]["x"] == 250
+        assert saved_ocr2["alternate_name_boxes"]["right"]["x"] == 300
     finally:
         app.extensions["settings_watcher"].stop()
 
@@ -2264,10 +2337,30 @@ def test_ocr_preview_runs_only_when_requested():
     assert 'id="refresh-ocr-preview"' in control_html
     assert 'addEventListener("click", loadCropPreview)' in control_html
     assert "setInterval(loadCropPreview" not in control_html
+    assert 'id="ocr-alt-left-img"' in control_html
+    assert 'id="ocr-alt-right-img"' in control_html
+    assert 'renderOcrCropPair("alt-", data.alternate)' in control_html
 
 
-def test_ocr_test_endpoint_uses_buffered_screenshot_and_returns_images():
+def test_calibration_page_supports_a_second_name_pair():
+    root = Path(__file__).resolve().parents[1]
+    calibration_html = (root / "templates" / "calibrate.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'value="alternate-left"' in calibration_html
+    assert 'value="alternate-right"' in calibration_html
+    assert 'id="alt-left-x"' in calibration_html
+    assert 'id="alt-right-x"' in calibration_html
+    assert 'id="preview-alt-left-img"' in calibration_html
+    assert 'id="preview-alt-right-img"' in calibration_html
+    assert 'alternate: alternate' in calibration_html
+
+
+def test_ocr_test_endpoint_uses_buffered_screenshot_and_returns_images(monkeypatch):
     import numpy as np
+
+    monkeypatch.setitem(sys.modules, "easyocr", ModuleType("easyocr"))
 
     class FakeReader:
         def readtext(self, crop, detail=1, paragraph=False):
@@ -2291,6 +2384,10 @@ def test_ocr_test_endpoint_uses_buffered_screenshot_and_returns_images():
             "capture": {"x": 10, "y": 10, "width": 80, "height": 80},
             "left": {"x": 0, "y": 0, "width": 30, "height": 30},
             "right": {"x": 40, "y": 0, "width": 30, "height": 30},
+            "alternate": {
+                "left": {"x": 0, "y": 40, "width": 30, "height": 30},
+                "right": {"x": 40, "y": 40, "width": 30, "height": 30},
+            },
         },
     )
     assert response.status_code == 200
@@ -2301,6 +2398,30 @@ def test_ocr_test_endpoint_uses_buffered_screenshot_and_returns_images():
     assert data["rightConfidence"] == 0.95
     assert data["leftImage"] != ""
     assert data["rightImage"] != ""
+    assert data["alternate"]["left"] == "テスト"
+    assert data["alternate"]["rightConfidence"] == 0.95
+    assert data["alternate"]["leftImage"] != ""
+
+
+def test_ocr_crop_preview_returns_both_pairs(monkeypatch):
+    monkeypatch.setitem(sys.modules, "easyocr", ModuleType("easyocr"))
+    app = create_app(
+        schedule=FakeSchedule([make_bout(1, 10, 11)]),
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+    app.extensions["ocr_scanner"].capture_crops = lambda settings: (
+        (("left", 0.9, b"left-image"), ("right", 0.8, b"right-image")),
+        (("alt-left", 0.7, b"alt-left-image"), ("alt-right", 0.6, b"alt-right-image")),
+    )
+
+    response = app.test_client().get("/api/ocr/crop-preview")
+
+    assert response.status_code == 200
+    assert response.json["leftText"] == "left"
+    assert response.json["rightConfidence"] == 0.8
+    assert response.json["alternate"]["leftText"] == "alt-left"
+    assert response.json["alternate"]["rightConfidence"] == 0.6
 
 
 def test_unknown_ocr_capture_region_is_rejected():

@@ -84,20 +84,21 @@ Open <http://127.0.0.1:5000/calibrate> in your browser (or click **Calibrate OCR
 2. **Draw name boxes**:
    - Choose **Draw Left Name** and click-drag a green box over the left wrestler's ring name.
    - Choose **Draw Right Name** and click-drag a blue box over the right wrestler's ring name.
+   - Choose **Draw Alternate Left** and **Draw Alternate Right** to mark the same names in the other broadcast layout, using orange and cyan boxes.
    - Aim for the large Japanese ring name only; avoid the small pronunciation line above or neighboring scoreboard graphics.
 
-3. **Automatic capture envelope**: The purple **Capture Region** box automatically wraps around both drawn name boxes. If you wish to frame the broadcast scoreboard banner manually, select **Draw Capture Region** and drag the purple box.
-4. **Test OCR**: Click **Test OCR** to display the left and right crops produced by the current boxes on the screenshot frame, along with recognized text and confidence scores.
-5. **Save to config**: Click **Save to config** to write the new `scoresheet` and relative `name_boxes` coordinates directly to `config.yaml` (or your active override file). The live configuration watcher applies the changes immediately.
+3. **Automatic capture envelope**: The purple **Capture Region** box automatically expands to enclose all drawn name boxes. Both layouts are read from this one scoresheet capture. If you wish to frame the scoreboard banner manually, select **Draw Capture Region** and drag the purple box; it still encloses the name boxes.
+4. **Test OCR**: Click **Test OCR** to display both left/right crop pairs from the screenshot, along with recognized text and confidence scores.
+5. **Save to config**: Click **Save to config** to write the `scoresheet`, `name_boxes`, and `alternate_name_boxes` coordinates directly to `config.yaml` (or your active override file). The live configuration watcher applies the changes immediately.
 
 #### 2. OCR Preview (`/control`)
 
 When match control is set to **Automated** and `ocr.enabled` is `true`, the Control page displays an **OCR Preview** section:
 
-- Click **Refresh Preview** to display the current left and right name crops, recognized text, and confidence.
+- Click **Refresh Preview** to display both name-box pairs, recognized text, and confidence.
 - Click **Calibrate OCR Tool** to open the screenshot-based calibration page, where you can draw boxes and preview the crops before saving.
 
-OCR waits for the configured number of consecutive reads before acting. Either wrestler's recognized name may be enough: recognized names are resolved through the API's Japanese-name dictionary, then the scanner selects a bout only if that name (or both names together) uniquely identifies one bout in the loaded basho, day, and division schedule. A single name that appears in more than one scheduled bout remains ambiguous and will not trigger a guess.
+OCR waits for the configured number of consecutive reads before acting. The scanner checks the current pair against the loaded bout schedule first, then uses the alternate pair if it matches; if both match, the current pair wins. If neither pair matches, existing behavior is preserved and the current pair's readings are reported. Either wrestler's recognized name may be enough: recognized names are resolved through the API's Japanese-name dictionary, then the scanner selects a bout only if that name (or both names together) uniquely identifies one bout in the loaded basho, day, and division schedule. A single name that appears in more than one scheduled bout remains ambiguous and will not trigger a guess.
 
 Japanese OCR can confuse similar-looking or uncommon kanji. If the Control page says the recognized names are not in the schedule, inspect the displayed OCR text and recalibrate the name boxes or improve the captured video size/clarity. Do not lower the confidence threshold just to force a match: the app only changes bouts after exact API dictionary resolution and a unique schedule match.
 
@@ -161,6 +162,7 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `ocr.minimum_confidence` | Minimum EasyOCR confidence from `0` through `1` for each name. |
 | `ocr.capture_regions.scoresheet` | Rectangle around the sumo broadcast scoreboard, in pixels relative to the selected monitor. |
 | `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `ocr.capture_regions.scoresheet`. |
+| `ocr.alternate_name_boxes.left`, `ocr.alternate_name_boxes.right` | Optional second name pair, also relative to the same scoresheet rectangle. Leave `alternate_name_boxes` null until the second broadcast area is calibrated. |
 
 Each of `overlay.control`, `overlay.scoreboard`, `overlay.prematch`, `overlay.slimhalf`, `overlay.slimfull`, and `overlay.upcomingmatches` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and bout metadata), `current_score` (wrestlers' current records), `result` (announced bout results and errors), and `background` (background color). Scoreboard and slim scoreboard `colors` and `font_sizes` additionally accept `stable_name` for wrestlers' stable names. The slim scoreboard `colors` and `font_sizes` objects also accept `upcoming_matches` for the “On Deck” label and upcoming wrestler names. All overlay sections accept `font_sizes` in pixels for their text groups. On the Control page, smaller labels retain their proportions to the main `text` and `muted` sizes. `accent` and `current_score` have independent sizes and colors; smaller labels retain their proportions relative to the main text in that color group. For example:
 
@@ -252,9 +254,20 @@ ocr:
       y: 50
       width: 400
       height: 40
+  alternate_name_boxes:
+    left:
+      x: 198
+      y: 120
+      width: 400
+      height: 40
+    right:
+      x: 480
+      y: 120
+      width: 400
+      height: 40
 ```
 
-The example is only a template: use pixel coordinates measured for your monitor and browser layout. Name-box coordinates are relative to the top-left of the capture rectangle, and both boxes must fit inside it. You can also override other settings, such as `ocr.monitor`, `ocr.capture_regions.scoresheet`, or `overlay.scoreboard.width`, using their normal `config.yaml` structure.
+The example is only a template: use pixel coordinates measured for your monitor and browser layout. All name-box coordinates are relative to the top-left of the capture rectangle, and all four boxes must fit inside it. You can also override other settings, such as `ocr.monitor`, `ocr.capture_regions.scoresheet`, or `overlay.scoreboard.width`, using their normal `config.yaml` structure.
 
 Pass the option to the executable to use an override configuration file:
 

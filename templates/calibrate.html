@@ -37,6 +37,8 @@
     #box-left:checked + label.box-btn { border-color: #22c55e; background: #1a3d28; }
     #box-right:checked + label.box-btn { border-color: #3b82f6; background: #1a2c4e; }
     #box-capture:checked + label.box-btn { border-color: #a855f7; background: #3b1f5e; }
+    #box-alternate-left:checked + label.box-btn { border-color: #f97316; background: #4a2c1a; }
+    #box-alternate-right:checked + label.box-btn { border-color: #06b6d4; background: #123b45; }
     /* Canvas/image area */
     .screenshot-wrapper {
       position: relative; display: inline-block;
@@ -49,12 +51,14 @@
       cursor: crosshair;
     }
     /* Coordinate panels */
-    .coords-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+    .coords-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
     .coord-box { padding: 10px; border: 1px solid #434a56; border-radius: 8px; min-width: 0; }
     .coord-box h3 { margin: 0 0 4px; font-size: 13px; font-weight: 700; }
     .coord-box .coord-sub { font-size: 11px; color: var(--overlay-muted-color); margin: 0 0 8px; }
     .coord-box.left-box h3 { color: #22c55e; }
     .coord-box.right-box h3 { color: #3b82f6; }
+    .coord-box.alternate-left-box h3 { color: #f97316; }
+    .coord-box.alternate-right-box h3 { color: #06b6d4; }
     .coord-box.capture h3 { color: #a855f7; }
     .coord-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .coord-field { display: grid; gap: 3px; font-size: 12px; color: var(--overlay-muted-color); min-width: 0; }
@@ -99,7 +103,7 @@
     <nav class="back-link"><a href="/control">← Back to Control</a></nav>
     <h1>OCR Calibration</h1>
     <p style="color:var(--overlay-muted-color);font-size:13px;margin:0 0 12px">
-      Draw boxes directly on the screenshot. Drawing the <strong>Left Name</strong> and <strong>Right Name</strong> boxes automatically encloses them in the capture region. Test OCR runs against this exact screenshot.
+      Draw both left/right name pairs directly on one screenshot. The capture region automatically expands to enclose all four boxes, so both broadcast layouts reuse one monitor capture.
     </p>
 
     <div class="toolbar">
@@ -109,6 +113,10 @@
         <label class="box-btn" for="box-left">Draw Left Name</label>
         <input type="radio" name="box-type" id="box-right" value="right">
         <label class="box-btn" for="box-right">Draw Right Name</label>
+        <input type="radio" name="box-type" id="box-alternate-left" value="alternate-left">
+        <label class="box-btn" for="box-alternate-left">Draw Alternate Left</label>
+        <input type="radio" name="box-type" id="box-alternate-right" value="alternate-right">
+        <label class="box-btn" for="box-alternate-right">Draw Alternate Right</label>
         <input type="radio" name="box-type" id="box-capture" value="capture">
         <label class="box-btn" for="box-capture">Draw Capture Region</label>
       </span>
@@ -117,6 +125,8 @@
     <div class="legend">
       <div class="legend-item"><div class="legend-swatch" style="background:#22c55e"></div> Left name box</div>
       <div class="legend-item"><div class="legend-swatch" style="background:#3b82f6"></div> Right name box</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#f97316"></div> Alternate left name box</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#06b6d4"></div> Alternate right name box</div>
       <div class="legend-item"><div class="legend-swatch" style="background:#a855f7"></div> Capture region</div>
     </div>
 
@@ -145,6 +155,26 @@
           <div class="coord-field"><label>Y</label><input id="right-y" type="number" min="0" step="1"></div>
           <div class="coord-field"><label>Width</label><input id="right-w" type="number" min="1" step="1"></div>
           <div class="coord-field"><label>Height</label><input id="right-h" type="number" min="1" step="1"></div>
+        </div>
+      </div>
+      <div class="coord-box alternate-left-box">
+        <h3>Alternate Left Name Box</h3>
+        <p class="coord-sub">Second broadcast area, pixels inside capture region</p>
+        <div class="coord-fields">
+          <div class="coord-field"><label>X</label><input id="alt-left-x" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Y</label><input id="alt-left-y" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Width</label><input id="alt-left-w" type="number" min="1" step="1"></div>
+          <div class="coord-field"><label>Height</label><input id="alt-left-h" type="number" min="1" step="1"></div>
+        </div>
+      </div>
+      <div class="coord-box alternate-right-box">
+        <h3>Alternate Right Name Box</h3>
+        <p class="coord-sub">Second broadcast area, pixels inside capture region</p>
+        <div class="coord-fields">
+          <div class="coord-field"><label>X</label><input id="alt-right-x" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Y</label><input id="alt-right-y" type="number" min="0" step="1"></div>
+          <div class="coord-field"><label>Width</label><input id="alt-right-w" type="number" min="1" step="1"></div>
+          <div class="coord-field"><label>Height</label><input id="alt-right-h" type="number" min="1" step="1"></div>
         </div>
       </div>
       <div class="coord-box capture">
@@ -178,6 +208,23 @@
           <div class="preview-confidence" id="preview-right-conf"></div>
         </div>
       </div>
+      <div class="ocr-preview-heading">
+        <h3>Alternate broadcast area</h3>
+      </div>
+      <div class="result-row">
+        <div class="result-cell">
+          <label for="preview-alt-left-img">Alternate left name crop</label>
+          <div class="result-thumb"><img id="preview-alt-left-img" alt="Alternate left name crop" style="display:none"></div>
+          <div class="preview-text" id="preview-alt-left-text"></div>
+          <div class="preview-confidence" id="preview-alt-left-conf"></div>
+        </div>
+        <div class="result-cell">
+          <label for="preview-alt-right-img">Alternate right name crop</label>
+          <div class="result-thumb"><img id="preview-alt-right-img" alt="Alternate right name crop" style="display:none"></div>
+          <div class="preview-text" id="preview-alt-right-text"></div>
+          <div class="preview-confidence" id="preview-alt-right-conf"></div>
+        </div>
+      </div>
     </section>
 
     <div class="actions">
@@ -188,16 +235,30 @@
 
   <script>
     // ── State ──────────────────────────────────────────────────────────────────
-    const BOX_COLORS = { capture: "#a855f7", left: "#22c55e", right: "#3b82f6" };
-    const BOX_LABELS = { capture: "Capture", left: "Left", right: "Right" };
+    const NAME_BOX_TYPES = ["left", "right", "alternate-left", "alternate-right"];
+    const BOX_COLORS = {
+      capture: "#a855f7",
+      left: "#22c55e",
+      right: "#3b82f6",
+      "alternate-left": "#f97316",
+      "alternate-right": "#06b6d4",
+    };
+    const BOX_LABELS = {
+      capture: "Capture",
+      left: "Left",
+      right: "Right",
+      "alternate-left": "Alt Left",
+      "alternate-right": "Alt Right",
+    };
 
     // capture: Monitor coordinates { x, y, width, height }
-    // left:    Relative coordinates { x, y, width, height } to capture
-    // right:   Relative coordinates { x, y, width, height } to capture
+    // Name boxes: Relative coordinates { x, y, width, height } to capture
     let boxes = {
       capture: null,
       left: null,
       right: null,
+      "alternate-left": null,
+      "alternate-right": null,
     };
 
     let previewDrag = null; // While dragging: { type, monBox }
@@ -217,6 +278,8 @@
       capture: { x: "cap-x", y: "cap-y", w: "cap-w", h: "cap-h" },
       left:    { x: "left-x", y: "left-y", w: "left-w", h: "left-h" },
       right:   { x: "right-x", y: "right-y", w: "right-w", h: "right-h" },
+      "alternate-left": { x: "alt-left-x", y: "alt-left-y", w: "alt-left-w", h: "alt-left-h" },
+      "alternate-right": { x: "alt-right-x", y: "alt-right-y", w: "alt-right-w", h: "alt-right-h" },
     };
 
     function getInputVal(id) { return Number(document.getElementById(id).value) || 0; }
@@ -329,8 +392,7 @@
     function redraw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawBox("capture", getMonitorBox("capture"));
-      drawBox("left", getMonitorBox("left"));
-      drawBox("right", getMonitorBox("right"));
+      NAME_BOX_TYPES.forEach(type => drawBox(type, getMonitorBox(type)));
     }
 
     // ── Drag to draw ──────────────────────────────────────────────────────────
@@ -378,72 +440,32 @@
       const drawnMon = previewDrag.monBox;
       previewDrag = null;
 
+      const monitorBoxes = {};
+      NAME_BOX_TYPES.forEach(type => {
+        monitorBoxes[type] = type === dragType
+          ? drawnMon
+          : getMonitorBox(type);
+      });
+      const candidates = Object.values(monitorBoxes).filter(Boolean);
       if (dragType === "capture") {
-        const oldCap = boxes.capture;
-        boxes.capture = drawnMon;
-        if (oldCap && boxes.left) {
-          boxes.left = {
-            x: Math.max(0, oldCap.x + boxes.left.x - drawnMon.x),
-            y: Math.max(0, oldCap.y + boxes.left.y - drawnMon.y),
-            width: Math.min(boxes.left.width, drawnMon.width),
-            height: Math.min(boxes.left.height, drawnMon.height),
-          };
-        }
-        if (oldCap && boxes.right) {
-          boxes.right = {
-            x: Math.max(0, oldCap.x + boxes.right.x - drawnMon.x),
-            y: Math.max(0, oldCap.y + boxes.right.y - drawnMon.y),
-            width: Math.min(boxes.right.width, drawnMon.width),
-            height: Math.min(boxes.right.height, drawnMon.height),
-          };
-        }
-      } else {
-        // dragType is "left" or "right"
-        const curLeftMon = (dragType === "left") ? drawnMon : getMonitorBox("left");
-        const curRightMon = (dragType === "right") ? drawnMon : getMonitorBox("right");
-
-        if (!boxes.capture) {
-          // Auto-envelope to enclose all available name boxes
-          const minX = Math.min(curLeftMon ? curLeftMon.x : Infinity, curRightMon ? curRightMon.x : Infinity);
-          const minY = Math.min(curLeftMon ? curLeftMon.y : Infinity, curRightMon ? curRightMon.y : Infinity);
-          const maxX = Math.max(curLeftMon ? curLeftMon.x + curLeftMon.width : -Infinity, curRightMon ? curRightMon.x + curRightMon.width : -Infinity);
-          const maxY = Math.max(curLeftMon ? curLeftMon.y + curLeftMon.height : -Infinity, curRightMon ? curRightMon.y + curRightMon.height : -Infinity);
-          boxes.capture = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-        } else {
-          // Check if drawnMon spills outside current capture
-          const cap = boxes.capture;
-          const spills = (
-            drawnMon.x < cap.x ||
-            drawnMon.y < cap.y ||
-            drawnMon.x + drawnMon.width > cap.x + cap.width ||
-            drawnMon.y + drawnMon.height > cap.y + cap.height
-          );
-          if (spills) {
-            const minX = Math.min(cap.x, drawnMon.x);
-            const minY = Math.min(cap.y, drawnMon.y);
-            const maxX = Math.max(cap.x + cap.width, drawnMon.x + drawnMon.width);
-            const maxY = Math.max(cap.y + cap.height, drawnMon.y + drawnMon.height);
-            boxes.capture = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-            if (curLeftMon && dragType !== "left") {
-              boxes.left = { x: curLeftMon.x - minX, y: curLeftMon.y - minY, width: curLeftMon.width, height: curLeftMon.height };
-            }
-            if (curRightMon && dragType !== "right") {
-              boxes.right = { x: curRightMon.x - minX, y: curRightMon.y - minY, width: curRightMon.width, height: curRightMon.height };
-            }
-          }
-        }
-
-        boxes[dragType] = {
-          x: drawnMon.x - boxes.capture.x,
-          y: drawnMon.y - boxes.capture.y,
-          width: drawnMon.width,
-          height: drawnMon.height,
-        };
+        candidates.push(drawnMon);
+      } else if (boxes.capture) {
+        candidates.push(boxes.capture);
       }
+      const minX = Math.min(...candidates.map(box => box.x));
+      const minY = Math.min(...candidates.map(box => box.y));
+      const maxX = Math.max(...candidates.map(box => box.x + box.width));
+      const maxY = Math.max(...candidates.map(box => box.y + box.height));
+      boxes.capture = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+      NAME_BOX_TYPES.forEach(type => {
+        const box = monitorBoxes[type];
+        boxes[type] = box
+          ? { ...box, x: box.x - minX, y: box.y - minY }
+          : null;
+      });
 
       writeBoxToInputs("capture", boxes.capture);
-      writeBoxToInputs("left", boxes.left);
-      writeBoxToInputs("right", boxes.right);
+      NAME_BOX_TYPES.forEach(type => writeBoxToInputs(type, boxes[type]));
       redraw();
     }
 
@@ -519,6 +541,13 @@
           if (lb) { boxes.left = lb; writeBoxToInputs("left", lb); }
           const rb = ocr.name_boxes && ocr.name_boxes.right;
           if (rb) { boxes.right = rb; writeBoxToInputs("right", rb); }
+          const alternate = ocr.alternate_name_boxes;
+          if (alternate) {
+            boxes["alternate-left"] = alternate.left;
+            boxes["alternate-right"] = alternate.right;
+            writeBoxToInputs("alternate-left", alternate.left);
+            writeBoxToInputs("alternate-right", alternate.right);
+          }
           redraw();
         })
         .catch(() => {});
@@ -531,10 +560,28 @@
       el.className = type === "ok" ? "ok" : type === "err" ? "err" : "";
     }
 
+    function readAlternatePair() {
+      const left = readBoxFromInputs("alternate-left");
+      const right = readBoxFromInputs("alternate-right");
+      const leftDrawn = left.width > 0 && left.height > 0;
+      const rightDrawn = right.width > 0 && right.height > 0;
+      if (!leftDrawn && !rightDrawn) return null;
+      if (!leftDrawn || !rightDrawn) {
+        throw new Error("Draw both alternate name boxes before testing or saving.");
+      }
+      return { left, right };
+    }
+
     function runOcrPreview() {
       const cap = readBoxFromInputs("capture");
       const left = readBoxFromInputs("left");
       const right = readBoxFromInputs("right");
+      let alternate;
+      try {
+        alternate = readAlternatePair();
+      } catch (error) {
+        return Promise.reject(error);
+      }
       return fetch("/api/ocr/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -542,6 +589,12 @@
           capture: { x: cap.x, y: cap.y, w: cap.width, h: cap.height },
           left:    { x: left.x, y: left.y, w: left.width, h: left.height },
           right:   { x: right.x, y: right.y, w: right.width, h: right.height },
+          alternate: alternate
+            ? {
+                left: { x: alternate.left.x, y: alternate.left.y, w: alternate.left.width, h: alternate.left.height },
+                right: { x: alternate.right.x, y: alternate.right.y, w: alternate.right.width, h: alternate.right.height },
+              }
+            : null,
         }),
       }).then(async response => {
         const payload = await response.json();
@@ -550,19 +603,24 @@
       });
     }
 
-    function renderOcrPreview(payload) {
+    function renderCropPair(prefix, pair) {
       for (const side of ["left", "right"]) {
-        const image = document.getElementById(`preview-${side}-img`);
-        const imageData = payload[`${side}Image`];
+        const image = document.getElementById(`${prefix}-${side}-img`);
+        const imageData = pair ? pair[`${side}Image`] : "";
         image.style.display = imageData ? "block" : "none";
         if (imageData) image.src = `data:image/png;base64,${imageData}`;
-        document.getElementById(`preview-${side}-text`).textContent =
-          payload[side] || "";
-        document.getElementById(`preview-${side}-conf`).textContent =
-          payload[`${side}Confidence`] != null
-            ? `${Math.round(payload[`${side}Confidence`] * 100)}% confidence`
+        document.getElementById(`${prefix}-${side}-text`).textContent =
+          pair ? pair[side] || "" : "";
+        document.getElementById(`${prefix}-${side}-conf`).textContent =
+          pair && pair[`${side}Confidence`] != null
+            ? `${Math.round(pair[`${side}Confidence`] * 100)}% confidence`
             : "";
       }
+    }
+
+    function renderOcrPreview(payload) {
+      renderCropPair("preview", payload);
+      renderCropPair("preview-alt", payload.alternate);
     }
 
     document.getElementById("btn-test").addEventListener("click", event => {
@@ -583,6 +641,13 @@
       const cap   = readBoxFromInputs("capture");
       const left  = readBoxFromInputs("left");
       const right = readBoxFromInputs("right");
+      let alternate;
+      try {
+        alternate = readAlternatePair();
+      } catch (error) {
+        setStatus(error.message, "err");
+        return;
+      }
       setStatus("Saving…", "");
       fetch("/api/ocr/calibration", {
         method: "POST",
@@ -591,6 +656,12 @@
           capture: { x: cap.x, y: cap.y, width: cap.width, height: cap.height },
           left:    { x: left.x, y: left.y, width: left.width, height: left.height },
           right:   { x: right.x, y: right.y, width: right.width, height: right.height },
+          alternate: alternate
+            ? {
+                left: alternate.left,
+                right: alternate.right,
+              }
+            : null,
         }),
       })
         .then(async r => {
