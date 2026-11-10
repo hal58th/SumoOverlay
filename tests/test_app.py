@@ -512,7 +512,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert "state.upcomingMatches.slice(0, style.match_count)" in upcoming_overlay.text
     assert '"Musubi-no-ichiban (last match)"' in upcoming_overlay.text
     assert 'state.settings.overlay.upcomingmatches' in upcoming_overlay.text
-    assert 'class="upcoming-label">Upcoming:</span>' in upcoming_overlay.text
+    assert 'class="upcoming-label">On Deck:</span>' in upcoming_overlay.text
     assert ".upcoming-label" in all_styles
     assert "color: var(--overlay-accent-color);" in all_styles
     assert "clamp(" not in all_styles
