@@ -366,11 +366,39 @@ def test_pages_and_kanji_lookup_are_available():
     app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
     client = app.test_client()
 
-    assert client.get("/prematch").status_code == 200
+    prematch_overlay = client.get("/prematch")
+    assert prematch_overlay.status_code == 200
     assert client.get("/pre-match-overlay").status_code == 404
     assert client.get("/overlay").status_code == 404
     scoreboard_overlay = client.get("/scoreboard")
     assert scoreboard_overlay.status_code == 200
+    prematch_v2_overlay = client.get("/prematch/v2")
+    assert prematch_v2_overlay.status_code == 200
+    name_fitting_script = client.get("/static/name-fitting.js")
+    assert name_fitting_script.status_code == 200
+    assert "const minimumFontSize = Math.min(baseFontSize, 12);" in name_fitting_script.text
+    assert "container.getBoundingClientRect().width - horizontalInsets" in name_fitting_script.text
+    assert "textWidth <= availableWidth - 1" in name_fitting_script.text
+    assert "baseFontSize = fontSize;\n    fit();" in name_fitting_script.text.replace("\r\n", "\n")
+    for overlay in (scoreboard_overlay, prematch_overlay, prematch_v2_overlay):
+        assert 'src="/static/name-fitting.js?v=5"' in overlay.text
+        assert "window.createPairedNameFitter" in overlay.text
+    assert "Sumo Pre-Match Overlay v2" in prematch_v2_overlay.text
+    assert 'class="configured-box pre-match-card prematch-v2"' in prematch_v2_overlay.text
+    assert 'class="versus prematch-v2-versus" aria-hidden="true">VS</div>' in prematch_v2_overlay.text
+    assert "const prematchV2 = true;" in prematch_v2_overlay.text
+    assert 'state.settings.overlay[prematchV2 ? "prematchv2" : "prematch"]' in prematch_v2_overlay.text
+    assert 'appendCareerAge("Age", String(age.years), comparisons.age[side]);' in prematch_v2_overlay.text
+    assert 'appendMeasurement("Ht.", height, comparisons.height[side]);' in prematch_v2_overlay.text
+    assert 'appendMeasurement("Wt.", weight, comparisons.weight[side]);' in prematch_v2_overlay.text
+    assert 'measurementsLine.append(document.createTextNode(`${label} `));' in prematch_v2_overlay.text
+    assert 'line(prematchV2 ? "Stable" : "Stable (heya)", content.heya);' in prematch_v2_overlay.text
+    assert 'line(prematchV2 ? "Birthplace" : "Place of origin (shusshin)", content.shusshin);' in prematch_v2_overlay.text
+    assert "font-size: calc(var(--overlay-muted-font-size) + 4px);" in client.get("/static/overlay.css").text
+    assert ".prematch-v2 .rank-record > :last-child" in client.get("/static/overlay.css").text
+    assert "font-size: calc(var(--overlay-current-score-font-size) + 4px);" in client.get("/static/overlay.css").text
+    assert ".prematch-v2 .prematch-v2-versus" in client.get("/static/overlay.css").text
+    assert client.get("/scoreboard/v2").status_code == 404
     slimhalf_overlay = client.get("/scoreboard/slimhalf")
     assert slimhalf_overlay.status_code == 200
     slimfull_overlay = client.get("/scoreboard/slimfull")
@@ -381,7 +409,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert client.get("/scoreboard-overlay").status_code == 404
     assert 'Makuuchi: 1' in scoreboard_overlay.text
     assert "return number ? `Div ${number}` : \"Division\";" in scoreboard_overlay.text
-    assert "fitNameToWidth" not in scoreboard_overlay.text
+    assert "fitWrestlerNames(settings.font_sizes.text);" in scoreboard_overlay.text
     assert "state.settings.overlay.scoreboard.width}px" in scoreboard_overlay.text
     assert "state.settings.overlay.scoreboard.height}px" in scoreboard_overlay.text
     assert 'style.font_sizes.text}px' in scoreboard_overlay.text
@@ -406,10 +434,15 @@ def test_pages_and_kanji_lookup_are_available():
     assert "height: 174px;" not in main_styles
     assert "font-size: var(--overlay-text-font-size);" in main_styles
     assert "line-height: 1.25;" in main_styles
+    main_name_styles = main_styles.split(".main-name {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "padding-bottom: .12em;" in main_name_styles
+    assert "margin-bottom: -.12em;" in main_name_styles
     assert "font-size: var(--overlay-muted-font-size);" in main_styles
     assert "font-size: var(--scoreboard-versus-font-size);" in main_styles
-    assert 'style.font_sizes.text}px' in client.get("/prematch").text
-    assert 'style.font_sizes.current_score}px' in client.get("/prematch").text
+    assert 'style.font_sizes.text}px' in prematch_overlay.text
+    assert 'style.font_sizes.current_score}px' in prematch_overlay.text
     main_strip_styles = main_styles.split(".main-strip {", maxsplit=1)[1].split(
         "}", maxsplit=1
     )[0]
@@ -485,14 +518,14 @@ def test_pages_and_kanji_lookup_are_available():
     assert "clamp(" not in all_styles
     assert "vw" not in all_styles
     assert "vh" not in all_styles
-    pre_match_html = client.get("/prematch").text
+    pre_match_html = prematch_overlay.text
     pre_match_card_styles = all_styles.split(".pre-match-card {", maxsplit=1)[1].split(
         "}", maxsplit=1
     )[0]
     assert "justify-content: flex-start;" in pre_match_card_styles
     assert "box-shadow" not in pre_match_card_styles
     assert (
-        "const { width, height, opacity } = state.settings.overlay.prematch;"
+        'const style = state.settings.overlay[prematchV2 ? "prematchv2" : "prematch"];'
         in pre_match_html
     )
     assert 'id="bouts-until-next-stage"' not in pre_match_html
@@ -508,7 +541,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'preMatchOverlay.style.width = `${width}px`;' in pre_match_html
     assert "preMatchOverlay.style.setProperty(\"--pre-match-opacity\", String(opacity));" in pre_match_html
     assert 'String(style.text_opacity)' in pre_match_html
-    assert "fitNameToWidth" not in pre_match_html
+    assert "fitWrestlerNames(" in pre_match_html
     assert '"--prematch-border-width"' in pre_match_html
     assert '"--prematch-border-color"' in pre_match_html
     assert "--prematch-border-width: 1px;" in all_styles
@@ -1144,7 +1177,7 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     assert settings["overlay"]["scoreboard"]["text_opacity"] == 0.85
     assert settings["overlay"]["prematch"]["text_opacity"] == 1
     assert settings["overlay"]["scoreboard"]["font_sizes"] == {
-        "text": 45,
+        "text": 65,
         "muted": 36,
         "accent": 46,
         "current_score": 36,
@@ -1159,6 +1192,19 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
         "current_score": 38,
         "result": 60,
     }
+    assert settings["overlay"]["prematchv2"]["font_sizes"] == {
+        "text": 80,
+        "muted": 36,
+        "accent": 54,
+        "current_score": 38,
+        "result": 60,
+    }
+    assert settings["overlay"]["prematchv2"] == settings["overlay"]["prematch"]
+    assert settings["overlay"]["prematchv2"] is not settings["overlay"]["prematch"]
+    assert (
+        settings["overlay"]["prematchv2"]["font_sizes"]
+        is not settings["overlay"]["prematch"]["font_sizes"]
+    )
 
     settings["overlay"]["scoreboard"]["font_sizes"]["text"] = 48.5
     settings["overlay"]["scoreboard"]["font_sizes"]["current_score"] = 32
@@ -1172,6 +1218,8 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     settings["overlay"]["prematch"]["font_sizes"]["muted"] = 32
     settings["overlay"]["prematch"]["font_sizes"]["current_score"] = 42
     settings["overlay"]["prematch"]["colors"]["current_score"] = "#abcdef"
+    settings["overlay"]["prematchv2"]["font_sizes"]["muted"] = 42
+    settings["overlay"]["prematchv2"]["colors"]["current_score"] = "#123abc"
     settings["overlay"]["slimfull"]["font_sizes"]["stable_name"] = 19
     settings["overlay"]["slimfull"]["colors"]["stable_name"] = "#abcdef"
     validated = validate_settings(settings)
@@ -1187,6 +1235,8 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     assert validated["overlay"]["prematch"]["font_sizes"]["muted"] == 32
     assert validated["overlay"]["prematch"]["font_sizes"]["current_score"] == 42
     assert validated["overlay"]["prematch"]["colors"]["current_score"] == "#abcdef"
+    assert validated["overlay"]["prematchv2"]["font_sizes"]["muted"] == 42
+    assert validated["overlay"]["prematchv2"]["colors"]["current_score"] == "#123abc"
     assert validated["overlay"]["slimfull"]["font_sizes"]["stable_name"] == 19
     assert validated["overlay"]["slimfull"]["colors"]["stable_name"] == "#abcdef"
 
@@ -1259,7 +1309,7 @@ def test_scoreboard_opacity_accepts_values_from_zero_through_one(opacity):
 @pytest.mark.parametrize("opacity_key", ["opacity", "text_opacity"])
 @pytest.mark.parametrize("opacity", [-0.1, 1.1, True, "0.5"])
 @pytest.mark.parametrize(
-    "overlay_name", ["scoreboard", "prematch", "slimhalf", "slimfull"]
+    "overlay_name", ["scoreboard", "prematch", "prematchv2", "slimhalf", "slimfull"]
 )
 def test_overlay_opacity_settings_reject_values_outside_unit_interval(
     overlay_name, opacity_key, opacity
@@ -1272,7 +1322,7 @@ def test_overlay_opacity_settings_reject_values_outside_unit_interval(
 
 
 @pytest.mark.parametrize(
-    "overlay_name", ["scoreboard", "prematch", "slimhalf", "slimfull"]
+    "overlay_name", ["scoreboard", "prematch", "prematchv2", "slimhalf", "slimfull"]
 )
 @pytest.mark.parametrize("opacity", [0, 0.5, 1])
 def test_overlay_text_opacity_accepts_values_from_zero_through_one(

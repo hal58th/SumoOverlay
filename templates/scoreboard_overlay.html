@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Main Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=14) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=16) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="{{ url_for('static', filename='name-fitting.js', v=5) }}"></script>
 </head>
 <body>
   <main id="main-overlay" class="configured-box main-strip" hidden aria-live="polite">
@@ -32,6 +33,10 @@
   </main>
   <script>
     const mainOverlay = document.getElementById("main-overlay");
+    const fitWrestlerNames = window.createPairedNameFitter([
+      document.getElementById("east-name"),
+      document.getElementById("west-name")
+    ]);
 
     function applyOverlayStyle(style) {
       const root = document.documentElement;
@@ -152,6 +157,7 @@
         stableName.hidden = !settings.show_stable_name || !stableNames[side];
       }
       mainOverlay.hidden = false;
+      fitWrestlerNames(settings.font_sizes.text);
     }
 
     fetch("/api/state")

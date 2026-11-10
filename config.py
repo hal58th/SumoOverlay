@@ -34,7 +34,7 @@ DEFAULT_OVERLAY_STYLE = {
     },
 }
 DEFAULT_SCOREBOARD_FONT_SIZES = {
-    "text": 45,
+    "text": 65,
     "muted": 36,
     "accent": 46,
     "current_score": 36,
@@ -91,6 +91,7 @@ DEFAULT_PREMATCH_BORDER = {
 BOX_OVERLAYS = (
     "scoreboard",
     "prematch",
+    "prematchv2",
     "slimhalf",
     "slimfull",
     "upcomingmatches",
@@ -160,6 +161,20 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             },
         },
         "prematch": {
+            "width": 1656,
+            "height": 800,
+            "opacity": 0.95,
+            "text_opacity": 1,
+            "font_sizes": copy.deepcopy(DEFAULT_PREMATCH_FONT_SIZES),
+            "border": copy.deepcopy(DEFAULT_PREMATCH_BORDER),
+            **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
+            "colors": {
+                **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
+                "current_score": "#e8bd68",
+                "background": "#141922",
+            },
+        },
+        "prematchv2": {
             "width": 1656,
             "height": 800,
             "opacity": 0.95,
@@ -628,6 +643,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         "control": DEFAULT_CONTROL_FONT_SIZES,
         "scoreboard": DEFAULT_SCOREBOARD_FONT_SIZES,
         "prematch": DEFAULT_PREMATCH_FONT_SIZES,
+        "prematchv2": DEFAULT_PREMATCH_FONT_SIZES,
         "slimhalf": DEFAULT_SLIMHALF_FONT_SIZES,
         "slimfull": DEFAULT_SLIMFULL_FONT_SIZES,
         "upcomingmatches": DEFAULT_SLIM_FONT_SIZES,

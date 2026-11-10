@@ -218,6 +218,7 @@ body {
   justify-items: center;
   gap: 6px;
   line-height: 1.05;
+  transform: translateY(-12px);
 }
 
 .main-rank-score {
@@ -253,6 +254,8 @@ body {
   max-width: 100%;
   font-size: var(--overlay-text-font-size);
   line-height: 1.25;
+  padding-bottom: .12em;
+  margin-bottom: -.12em;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -411,6 +414,24 @@ body {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.prematch-v2 .rank {
+  font-size: calc(var(--overlay-muted-font-size) + 4px);
+}
+
+.prematch-v2 .rank-record > :last-child {
+  font-size: calc(var(--overlay-current-score-font-size) + 4px);
+}
+
+.prematch-v2 .prematch-v2-versus {
+  visibility: hidden;
+}
+
+.prematch-v2 .wrestler-profile-measurements {
+  display: block;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wrestler-profile strong {
