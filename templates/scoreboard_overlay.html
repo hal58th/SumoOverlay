@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Main Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=12) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=14) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -15,6 +15,7 @@
         <span id="east-rank" class="main-rank"></span>
         <span id="east-record" class="main-record"></span>
       </span>
+      <span id="east-stable-name" class="main-stable-name" hidden></span>
     </span>
     <span class="main-center">
       <span id="division" class="main-division"></span>
@@ -26,6 +27,7 @@
         <span id="west-rank" class="main-rank"></span>
         <span id="west-record" class="main-record"></span>
       </span>
+      <span id="west-stable-name" class="main-stable-name" hidden></span>
     </span>
   </main>
   <script>
@@ -38,6 +40,7 @@
       root.style.setProperty("--overlay-muted-color", style.colors.muted);
       root.style.setProperty("--overlay-accent-color", style.colors.accent);
       root.style.setProperty("--overlay-current-score-color", style.colors.current_score);
+      root.style.setProperty("--scoreboard-stable-name-color", style.colors.stable_name);
       root.style.setProperty("--overlay-result-color", style.colors.result);
       root.style.setProperty("--overlay-background-color", style.colors.background);
       mainOverlay.style.setProperty("--scoreboard-opacity", String(style.opacity));
@@ -48,6 +51,10 @@
       root.style.setProperty(
         "--overlay-current-score-font-size",
         `${style.font_sizes.current_score}px`
+      );
+      root.style.setProperty(
+        "--scoreboard-stable-name-font-size",
+        `${style.font_sizes.stable_name}px`
       );
       root.style.setProperty("--overlay-result-font-size", `${style.font_sizes.result}px`);
       root.style.setProperty(
@@ -138,6 +145,12 @@
       renderBoutRecord("west", state.west.record, emphasisThreshold, state.announcedWinner);
       document.getElementById("east-rank").textContent = abbreviatedRank(state.east.rank);
       document.getElementById("west-rank").textContent = abbreviatedRank(state.west.rank);
+      const stableNames = state.stableNames || {};
+      for (const side of ["east", "west"]) {
+        const stableName = document.getElementById(`${side}-stable-name`);
+        stableName.textContent = stableNames[side] || "";
+        stableName.hidden = !settings.show_stable_name || !stableNames[side];
+      }
       mainOverlay.hidden = false;
     }
 

@@ -118,9 +118,14 @@ def create_app(
                 upcoming_count = max(
                     upcoming_count, slim_overlay["upcoming_matches_count"]
                 )
+        include_stable_names = any(
+            current["overlay"][name]["show_stable_name"]
+            for name in ("scoreboard", "slimhalf", "slimfull")
+        )
         result = controller.state(
             include_head_to_head=include_head_to_head,
             upcoming_count=upcoming_count,
+            include_stable_names=include_stable_names,
         )
         with result_lock:
             winner = announced_winner

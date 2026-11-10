@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Slim Scoreboard</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=16) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=17) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -12,10 +12,12 @@
     <div class="slim-main-line">
       <span id="east-name" class="slim-name"></span>
       <span id="east-rank" class="slim-rank"></span>
+      <span id="east-stable-name" class="slim-stable-name" hidden></span>
       <span id="east-record" class="slim-record"></span>
       <span class="slim-versus">vs.</span>
       <span id="west-name" class="slim-name"></span>
       <span id="west-rank" class="slim-rank"></span>
+      <span id="west-stable-name" class="slim-stable-name" hidden></span>
       <span id="west-record" class="slim-record"></span>
       <span class="slim-divider">-</span>
       {% if layout == "slimfull" %}
@@ -60,6 +62,7 @@
       root.style.setProperty("--overlay-accent-color", style.colors.accent);
       root.style.setProperty("--overlay-current-score-color", style.colors.current_score);
       root.style.setProperty("--slim-upcoming-matches-color", style.colors.upcoming_matches);
+      root.style.setProperty("--slim-stable-name-color", style.colors.stable_name);
       root.style.setProperty("--overlay-result-color", style.colors.result);
       root.style.setProperty("--overlay-background-color", style.colors.background);
       root.style.setProperty("--overlay-text-font-size", `${style.font_sizes.text}px`);
@@ -69,6 +72,10 @@
       root.style.setProperty(
         "--slim-upcoming-matches-font-size",
         `${style.font_sizes.upcoming_matches}px`
+      );
+      root.style.setProperty(
+        "--slim-stable-name-font-size",
+        `${style.font_sizes.stable_name}px`
       );
       root.style.setProperty("--overlay-result-font-size", `${style.font_sizes.result}px`);
       slimOverlay.style.width = `${style.width}px`;
@@ -89,6 +96,12 @@
       document.getElementById("west-name").textContent = state.west.name;
       document.getElementById("east-rank").textContent = abbreviatedRank(state.east.rank);
       document.getElementById("west-rank").textContent = abbreviatedRank(state.west.rank);
+      const stableNames = state.stableNames || {};
+      for (const side of ["east", "west"]) {
+        const stableName = document.getElementById(`${side}-stable-name`);
+        stableName.textContent = stableNames[side] || "";
+        stableName.hidden = !settings.show_stable_name || !stableNames[side];
+      }
       const formatRecord = record =>
         record ? `${record.wins}-${record.losses}` : "—";
       const eastRecord = document.getElementById("east-record");

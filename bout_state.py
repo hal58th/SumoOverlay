@@ -34,7 +34,10 @@ class BoutController:
             prefetch(self._bouts[self._index : self._index + 3])
 
     def state(
-        self, include_head_to_head: bool = False, upcoming_count: int = 6
+        self,
+        include_head_to_head: bool = False,
+        upcoming_count: int = 6,
+        include_stable_names: bool = False,
     ) -> dict[str, Any]:
         with self._lock:
             bout = self._bouts[self._index]
@@ -83,6 +86,9 @@ class BoutController:
             payload["headToHead"] = (
                 head_to_head(bout) if include_head_to_head and callable(head_to_head) else None
             )
+            stable_names = getattr(self._schedule, "wrestler_stable_names", None)
+            if include_stable_names and callable(stable_names):
+                payload["stableNames"] = stable_names(bout)
             wrestler_profiles = getattr(self._schedule, "wrestler_profiles", None)
             if include_head_to_head and callable(wrestler_profiles):
                 payload["wrestlerProfiles"] = wrestler_profiles(bout)
