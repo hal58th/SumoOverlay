@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sumo Pre-Match Overlay</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=13) }}">
+  <title>{{ "Sumo Pre-Match Overlay v2" if prematch_v2|default(false) else "Sumo Pre-Match Overlay" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=16) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="{{ url_for('static', filename='name-fitting.js', v=5) }}"></script>
 </head>
 <body>
-  <main id="pre-match-overlay" class="configured-box pre-match-card" hidden aria-live="polite">
+  <main id="pre-match-overlay" class="configured-box pre-match-card{% if prematch_v2|default(false) %} prematch-v2{% endif %}" hidden aria-live="polite">
     <div class="bout-meta">
       <span id="division"></span>
       <span id="division-number"></span>
@@ -23,7 +24,7 @@
         </div>
         <div id="east-profile" class="wrestler-profile"></div>
       </section>
-      <div class="versus">VS</div>
+      <div class="versus{% if prematch_v2|default(false) %} prematch-v2-versus{% endif %}"{% if prematch_v2|default(false) %} aria-hidden="true"{% endif %}>VS</div>
       <section class="wrestler west">
         <div id="west-name" class="wrestler-name"></div>
         <div class="rank-record">
@@ -40,8 +41,13 @@
     <div id="overlay-error" class="overlay-error" role="alert"></div>
   </main>
   <script>
+    const prematchV2 = {{ prematch_v2|default(false)|tojson }};
     const preMatchOverlay = document.getElementById("pre-match-overlay");
     const overlayError = document.getElementById("overlay-error");
+    const fitWrestlerNames = window.createPairedNameFitter([
+      document.getElementById("east-name"),
+      document.getElementById("west-name")
+    ]);
     let hideTimer = null;
     let lastBoutKey = null;
     let lastTimerKey = null;
@@ -49,8 +55,8 @@
     let lastPinned = null;
     function updateOverlaySize(state) {
       if (state.settings && state.settings.overlay) {
-        const { width, height, opacity } = state.settings.overlay.prematch;
-        const style = state.settings.overlay.prematch;
+        const style = state.settings.overlay[prematchV2 ? "prematchv2" : "prematch"];
+        const { width, height, opacity } = style;
         const root = document.documentElement;
         root.style.setProperty("--overlay-font-family", style.font_family);
         root.style.setProperty("--overlay-text-color", style.colors.text);
@@ -73,7 +79,7 @@
         );
         root.style.setProperty(
           "--prematch-profile-font-size",
-          `${style.font_sizes.muted * (26 / 36)}px`
+          `${style.font_sizes.muted * (prematchV2 ? 30 : 26) / 36 + (prematchV2 ? 4 : 0)}px`
         );
         root.style.setProperty(
           "--prematch-versus-font-size",
@@ -98,6 +104,7 @@
           "--prematch-text-opacity",
           String(style.text_opacity)
         );
+        fitWrestlerNames(style.font_sizes.text);
         if (style.border) {
           const borderWidth = style.border.width !== undefined ? style.border.width : 1;
           const borderColor = style.border.color || "rgb(255 255 255 / 20%)";
@@ -212,13 +219,17 @@
       const totalInches = Math.round(heightCm / 2.54);
       const feet = Math.floor(totalInches / 12);
       const inches = totalInches % 12;
-      return `Height: ${heightCm} cm (${feet}'${inches}")`;
+      return prematchV2
+        ? `${heightCm} cm / ${feet}'${inches}"`
+        : `Height: ${heightCm} cm (${feet}'${inches}")`;
     }
 
     function weightText(weightKg) {
       if (typeof weightKg !== "number" || weightKg <= 0) return null;
       const pounds = Math.round(weightKg * 2.2046226218);
-      return `Weight: ${weightKg} kg (${pounds} lb)`;
+      return prematchV2
+        ? `${weightKg} kg / ${pounds} lb`
+        : `Weight: ${weightKg} kg (${pounds} lb)`;
     }
 
     function renderWrestlerProfile(side, profile, state, comparisons) {
@@ -241,7 +252,9 @@
       if (lifetime && typeof lifetime.matches === "number") {
         const lifetimeLine = document.createElement("div");
         lifetimeLine.className = "wrestler-profile-line";
-        lifetimeLine.append(document.createTextNode("Career: "));
+        if (!prematchV2) {
+          lifetimeLine.append(document.createTextNode("Career: "));
+        }
         const score = document.createElement(
           comparisons.lifetimeScore[side] ? "strong" : "span"
         );
@@ -262,19 +275,46 @@
         lines.push(lifetimeLine);
       }
       const wrestlingMonths = monthsBetweenBashos(content.debut, state.settings.bashoId);
-      if (wrestlingMonths !== null) {
-        line(
-          "Wrestling",
-          `${Math.floor(wrestlingMonths / 12)} years, ${wrestlingMonths % 12} months`,
-          comparisons.tenure[side]
-        );
-      }
-      if (age) {
-        line(
-          "Age",
-          `${age.years} years, ${age.months} months`,
-          comparisons.age[side]
-        );
+      if (prematchV2) {
+        const careerAgeLine = document.createElement("div");
+        careerAgeLine.className = "wrestler-profile-line";
+        const appendCareerAge = (label, value, emphasized) => {
+          if (careerAgeLine.childNodes.length > 0) {
+            careerAgeLine.append(document.createTextNode(" | "));
+          }
+          careerAgeLine.append(document.createTextNode(`${label}: `));
+          const valueNode = emphasized
+            ? document.createElement("strong")
+            : document.createElement("span");
+          valueNode.textContent = value;
+          careerAgeLine.append(valueNode);
+        };
+        if (wrestlingMonths !== null) {
+          appendCareerAge(
+            "Career",
+            `${Math.floor(wrestlingMonths / 12)} years`,
+            comparisons.tenure[side]
+          );
+        }
+        if (age) {
+          appendCareerAge("Age", String(age.years), comparisons.age[side]);
+        }
+        if (careerAgeLine.childNodes.length > 0) lines.push(careerAgeLine);
+      } else {
+        if (wrestlingMonths !== null) {
+          line(
+            "Wrestling",
+            `${Math.floor(wrestlingMonths / 12)} years, ${wrestlingMonths % 12} months`,
+            comparisons.tenure[side]
+          );
+        }
+        if (age) {
+          line(
+            "Age",
+            `${age.years} years, ${age.months} months`,
+            comparisons.age[side]
+          );
+        }
       }
       if (content.highestRank) {
         const currentRank = state[side] && state[side].rank;
@@ -286,14 +326,33 @@
         );
       }
       const height = heightText(content.height);
-      if (height) line("Height", height.replace(/^Height: /, ""), comparisons.height[side]);
       const weight = weightText(content.weight);
-      if (weight) line("Weight", weight.replace(/^Weight: /, ""), comparisons.weight[side]);
+      if (prematchV2) {
+        const measurementsLine = document.createElement("div");
+        measurementsLine.className = "wrestler-profile-line wrestler-profile-measurements";
+        const appendMeasurement = (label, value, emphasized) => {
+          if (measurementsLine.childNodes.length > 0) {
+            measurementsLine.append(document.createTextNode(" | "));
+          }
+          measurementsLine.append(document.createTextNode(`${label} `));
+          const valueNode = emphasized
+            ? document.createElement("strong")
+            : document.createElement("span");
+          valueNode.textContent = value;
+          measurementsLine.append(valueNode);
+        };
+        if (height) appendMeasurement("Ht.", height, comparisons.height[side]);
+        if (weight) appendMeasurement("Wt.", weight, comparisons.weight[side]);
+        if (measurementsLine.childNodes.length > 0) lines.push(measurementsLine);
+      } else {
+        if (height) line("Height", height.replace(/^Height: /, ""), comparisons.height[side]);
+        if (weight) line("Weight", weight.replace(/^Weight: /, ""), comparisons.weight[side]);
+      }
       if (typeof content.heya === "string" && content.heya) {
-        line("Stable (heya)", content.heya);
+        line(prematchV2 ? "Stable" : "Stable (heya)", content.heya);
       }
       if (typeof content.shusshin === "string" && content.shusshin) {
-        line("Place of origin (shusshin)", content.shusshin);
+        line(prematchV2 ? "Birthplace" : "Place of origin (shusshin)", content.shusshin);
       }
       container.replaceChildren(...lines);
     }
@@ -308,6 +367,9 @@
         `Bout ${state.divisionBoutNumber} out of ${state.divisionTotal}`;
       document.getElementById("east-name").textContent = state.east.name;
       document.getElementById("west-name").textContent = state.west.name;
+      fitWrestlerNames(
+        state.settings.overlay[prematchV2 ? "prematchv2" : "prematch"].font_sizes.text
+      );
       const emphasisThreshold = state.divisionNumber >= 3 ? 4 : 8;
       const profiles = state.wrestlerProfiles || {};
       const eastProfile = profiles.east || {};
@@ -379,6 +441,9 @@
       if (hideTimer !== null) window.clearTimeout(hideTimer);
       hideTimer = null;
       preMatchOverlay.hidden = false;
+      fitWrestlerNames(
+        state.settings.overlay[prematchV2 ? "prematchv2" : "prematch"].font_sizes.text
+      );
       if (state.settings.preMatchPinned) {
         preMatchOverlay.hidden = false;
         return;

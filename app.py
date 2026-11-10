@@ -256,6 +256,10 @@ def create_app(
     def scoreboard_overlay() -> str:
         return render_template(current_settings()["templates"]["scoreboard"])
 
+    @app.get("/prematch/v2")
+    def pre_match_v2_overlay() -> str:
+        return render_template("prematch_overlay.html", prematch_v2=True)
+
     @app.get("/scoreboard/slimhalf")
     def slimhalf_scoreboard_overlay() -> str:
         return render_template(
