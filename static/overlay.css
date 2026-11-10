@@ -101,11 +101,13 @@ body {
 .slim-versus,
 .slim-divider,
 .slim-division,
-.slim-bout-details {
+.slim-bout-details,
+.slim-upcoming-matches {
   opacity: var(--slim-text-opacity, 1);
 }
 
 .slim-name {
+  flex-shrink: 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -147,6 +149,13 @@ body {
 
 .slim-bout-details {
   font-size: var(--overlay-muted-font-size);
+}
+
+.slim-upcoming-matches {
+  color: var(--slim-upcoming-matches-color, var(--overlay-text-color));
+  flex-shrink: 0;
+  font-size: var(--slim-upcoming-matches-font-size, var(--overlay-text-font-size));
+  white-space: nowrap;
 }
 
 .upcoming-line {
@@ -346,7 +355,15 @@ body {
 }
 
 .west .rank-record {
-  justify-content: flex-end;
+  justify-content: flex-start;
+}
+
+.west .wrestler-name {
+  text-align: left;
+}
+
+.west .wrestler-profile {
+  text-align: left;
 }
 
 .wrestler-profile {

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumo Slim Scoreboard</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=13) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=16) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
@@ -25,6 +25,7 @@
       {% if layout == "slimfull" %}
       <span id="bout-details" class="slim-bout-details"></span>
       {% endif %}
+      <span id="upcoming-matches" class="slim-upcoming-matches" hidden></span>
     </div>
   </main>
   <script>
@@ -58,12 +59,17 @@
       root.style.setProperty("--overlay-muted-color", style.colors.muted);
       root.style.setProperty("--overlay-accent-color", style.colors.accent);
       root.style.setProperty("--overlay-current-score-color", style.colors.current_score);
+      root.style.setProperty("--slim-upcoming-matches-color", style.colors.upcoming_matches);
       root.style.setProperty("--overlay-result-color", style.colors.result);
       root.style.setProperty("--overlay-background-color", style.colors.background);
       root.style.setProperty("--overlay-text-font-size", `${style.font_sizes.text}px`);
       root.style.setProperty("--overlay-muted-font-size", `${style.font_sizes.muted}px`);
       root.style.setProperty("--overlay-accent-font-size", `${style.font_sizes.accent}px`);
       root.style.setProperty("--overlay-current-score-font-size", `${style.font_sizes.current_score}px`);
+      root.style.setProperty(
+        "--slim-upcoming-matches-font-size",
+        `${style.font_sizes.upcoming_matches}px`
+      );
       root.style.setProperty("--overlay-result-font-size", `${style.font_sizes.result}px`);
       slimOverlay.style.width = `${style.width}px`;
       slimOverlay.style.height = `${style.height}px`;
@@ -91,6 +97,16 @@
       westRecord.hidden = !settings.show_current_score;
       eastRecord.textContent = formatRecord(state.east.record);
       westRecord.textContent = formatRecord(state.west.record);
+      const upcomingMatches = document.getElementById("upcoming-matches");
+      upcomingMatches.hidden = !settings.show_upcoming_matches;
+      if (settings.show_upcoming_matches) {
+        const upcoming = state.upcomingMatches
+          .slice(0, settings.upcoming_matches_count)
+          .map(match => `${match.east} vs ${match.west}`);
+        upcomingMatches.textContent = `On Deck: ${
+          upcoming.length ? upcoming.join(" | ") : "No upcoming matches"
+        }`;
+      }
       if ("{{ layout }}" === "slimfull") {
         const headToHead = state.headToHead;
         document.getElementById("head-to-head").textContent = !headToHead

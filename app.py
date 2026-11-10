@@ -109,7 +109,19 @@ def create_app(
     announced_winner: str | None = None
 
     def public_state(include_head_to_head: bool = False) -> dict[str, Any]:
-        result = controller.state(include_head_to_head=include_head_to_head)
+        with settings_lock:
+            current = copy.deepcopy(active_settings)
+        upcoming_count = current["overlay"]["upcomingmatches"]["match_count"]
+        for overlay_name in ("slimhalf", "slimfull"):
+            slim_overlay = current["overlay"][overlay_name]
+            if slim_overlay["show_upcoming_matches"]:
+                upcoming_count = max(
+                    upcoming_count, slim_overlay["upcoming_matches_count"]
+                )
+        result = controller.state(
+            include_head_to_head=include_head_to_head,
+            upcoming_count=upcoming_count,
+        )
         with result_lock:
             winner = announced_winner
         if winner is not None:
@@ -118,8 +130,6 @@ def create_app(
             winner_side["record"]["wins"] += 1
             loser_side["record"]["losses"] += 1
             result["announcedWinner"] = winner
-        with settings_lock:
-            current = copy.deepcopy(active_settings)
         result["settings"] = {
             "division": current["division"],
             "bashoId": current["basho_id"],

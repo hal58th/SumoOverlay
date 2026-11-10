@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier, Event
+from threading import Barrier, Event, Lock
 
 import pytest
 import requests
@@ -548,6 +548,52 @@ def test_head_to_head_fetch_is_cached_per_pair_across_repeated_and_concurrent_re
     assert schedule.head_to_head(first_bout)["total"] == 0
     assert schedule.head_to_head(next_bout)["total"] == 0
     assert client.fetch_calls == [(1, 2), (3, 4)]
+
+
+def test_head_to_head_prefetch_is_bounded_and_populates_the_pair_cache():
+    class FakeClient:
+        def __init__(self):
+            self.fetch_calls = []
+            self.active = 0
+            self.max_active = 0
+            self.completed = 0
+            self.lock = Lock()
+            self.three_started = Event()
+            self.release_fetches = Event()
+            self.all_completed = Event()
+
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(index + 1, index * 2 + 1, index * 2 + 2) for index in range(5)]
+
+        def fetch_head_to_head(self, rikishi_id, opponent_id):
+            with self.lock:
+                self.fetch_calls.append((rikishi_id, opponent_id))
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+                if self.active == 3:
+                    self.three_started.set()
+            self.release_fetches.wait(timeout=2)
+            with self.lock:
+                self.active -= 1
+                self.completed += 1
+                if self.completed == 5:
+                    self.all_completed.set()
+            return []
+
+    client = FakeClient()
+    schedule = BashoSchedule(client, "202505", "Makuuchi", 1)
+
+    schedule.prefetch_head_to_head(schedule.bouts)
+
+    assert client.three_started.wait(timeout=2)
+    assert client.max_active == 3
+    client.release_fetches.set()
+    assert client.all_completed.wait(timeout=2)
+    assert len(client.fetch_calls) == 5
+
+    for bout in schedule.bouts:
+        assert schedule.head_to_head(bout)["total"] == 0
+    assert len(client.fetch_calls) == 5
 
 
 def test_live_api_client_targets_documented_h2h_route():
