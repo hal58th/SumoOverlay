@@ -227,11 +227,20 @@ def create_app(
             socketio.emit("pre_match_update", pre_match_state)
         return state
 
+    def ocr_pair_matches_bout(left_name: str, right_name: str) -> bool:
+        find_bout = getattr(controller.schedule, "find_bout_index_by_kanji", None)
+        return callable(find_bout) and find_bout(left_name, right_name) is not None
+
     def current_settings() -> dict[str, Any]:
         with settings_lock:
             return copy.deepcopy(active_settings)
 
-    ocr_scanner = OCRScanner(current_settings, handle_ocr_match, app.logger)
+    ocr_scanner = OCRScanner(
+        current_settings,
+        handle_ocr_match,
+        app.logger,
+        matches_bout=ocr_pair_matches_bout,
+    )
     app.extensions["ocr_scanner"] = ocr_scanner
     if enable_ocr:
         ocr_scanner.start()
@@ -405,8 +414,7 @@ def create_app(
         if not isinstance(payload, dict):
             return jsonify({"error": "JSON body is required"}), 400
 
-        def _parse_box(key: str) -> dict[str, int] | None:
-            box = payload.get(key)
+        def _parse_box_from_value(box: Any) -> dict[str, int] | None:
             if not isinstance(box, dict):
                 return None
             try:
@@ -421,6 +429,9 @@ def create_app(
             except (KeyError, TypeError, ValueError):
                 return None
 
+        def _parse_box(key: str) -> dict[str, int] | None:
+            return _parse_box_from_value(payload.get(key))
+
         capture = _parse_box("capture")
         left = _parse_box("left")
         right = _parse_box("right")
@@ -429,6 +440,19 @@ def create_app(
                 "error": "Body must contain capture, left, and right objects each "
                          "with x, y, width/w, height/h fields"
             }), 400
+        alternate_payload = payload.get("alternate")
+        alternate_boxes = None
+        if alternate_payload is not None:
+            if not isinstance(alternate_payload, dict):
+                return jsonify({"error": "alternate must contain left and right boxes"}), 400
+            alternate_left = _parse_box_from_value(alternate_payload.get("left"))
+            alternate_right = _parse_box_from_value(alternate_payload.get("right"))
+            if alternate_left is None or alternate_right is None:
+                return jsonify({
+                    "error": "alternate must contain left and right boxes with "
+                             "x, y, width/w, height/h fields"
+                }), 400
+            alternate_boxes = {"left": alternate_left, "right": alternate_right}
 
         snap = current_settings()
         monitor_number = snap["ocr"]["monitor"]
@@ -437,20 +461,22 @@ def create_app(
         right_img: bytes = b""
         try:
             if last_frame is not None:
-                (left_text, left_conf, left_img), (right_text, right_conf, right_img) = (
+                primary, alternate = (
                     ocr_scanner.read_crops_from_frame(
                         last_frame,
                         capture,
                         {"left": left, "right": right},
                         frame_is_full_monitor=True,
+                        alternate_name_boxes=alternate_boxes,
                     )
                 )
             else:
-                (left_text, left_conf), (right_text, right_conf) = (
+                primary, alternate = (
                     ocr_scanner.capture_and_read_with_boxes(
                         monitor_number,
                         capture,
                         {"left": left, "right": right},
+                        alternate_name_boxes=alternate_boxes,
                     )
                 )
         except RuntimeError as error:
@@ -459,14 +485,48 @@ def create_app(
             app.logger.error("OCR test failed: %s", error)
             return jsonify({"error": str(error)}), 500
 
-        return jsonify({
+        if last_frame is not None:
+            (left_text, left_conf, left_img), (right_text, right_conf, right_img) = primary
+        else:
+            (left_text, left_conf), (right_text, right_conf) = primary
+        response: dict[str, Any] = {
             "left": left_text,
             "right": right_text,
             "leftConfidence": left_conf,
             "rightConfidence": right_conf,
             "leftImage": base64.b64encode(left_img).decode() if left_img else "",
             "rightImage": base64.b64encode(right_img).decode() if right_img else "",
-        })
+        }
+        if alternate is not None:
+            if last_frame is not None:
+                alternate_left, alternate_right = alternate
+                response["alternate"] = {
+                    "left": alternate_left[0],
+                    "right": alternate_right[0],
+                    "leftConfidence": alternate_left[1],
+                    "rightConfidence": alternate_right[1],
+                    "leftImage": (
+                        base64.b64encode(alternate_left[2]).decode()
+                        if alternate_left[2]
+                        else ""
+                    ),
+                    "rightImage": (
+                        base64.b64encode(alternate_right[2]).decode()
+                        if alternate_right[2]
+                        else ""
+                    ),
+                }
+            else:
+                alternate_left, alternate_right = alternate
+                response["alternate"] = {
+                    "left": alternate_left[0],
+                    "right": alternate_right[0],
+                    "leftConfidence": alternate_left[1],
+                    "rightConfidence": alternate_right[1],
+                }
+        else:
+            response["alternate"] = None
+        return jsonify(response)
 
     @app.get("/api/ocr/crop-preview")
     def get_ocr_crop_preview() -> Any:
@@ -482,21 +542,36 @@ def create_app(
 
         snap = current_settings()
         try:
-            (left_text, left_conf, left_img), (right_text, right_conf, right_img) = (
-                ocr_scanner.capture_crops(snap)
-            )
+            primary, alternate = ocr_scanner.capture_crops(snap)
         except Exception as error:
             app.logger.error("OCR crop preview failed: %s", error)
             return jsonify({"error": str(error)})
 
-        return jsonify({
+        (left_text, left_conf, left_img), (right_text, right_conf, right_img) = primary
+        response = {
             "left": base64.b64encode(left_img).decode() if left_img else "",
             "right": base64.b64encode(right_img).decode() if right_img else "",
             "leftText": left_text,
             "rightText": right_text,
             "leftConfidence": left_conf,
             "rightConfidence": right_conf,
-        })
+            "alternate": None,
+        }
+        if alternate is not None:
+            alternate_left, alternate_right = alternate
+            response["alternate"] = {
+                "left": base64.b64encode(alternate_left[2]).decode()
+                if alternate_left[2]
+                else "",
+                "right": base64.b64encode(alternate_right[2]).decode()
+                if alternate_right[2]
+                else "",
+                "leftText": alternate_left[0],
+                "rightText": alternate_right[0],
+                "leftConfidence": alternate_left[1],
+                "rightConfidence": alternate_right[1],
+            }
+        return jsonify(response)
 
     @app.post("/api/ocr/calibration")
     def save_ocr_calibration() -> Any:
@@ -508,8 +583,7 @@ def create_app(
         if not isinstance(payload, dict):
             return jsonify({"error": "JSON body is required"}), 400
 
-        def _parse_box(key: str) -> dict[str, int] | None:
-            box = payload.get(key)
+        def _parse_box_from_value(box: Any) -> dict[str, int] | None:
             if not isinstance(box, dict):
                 return None
             try:
@@ -522,6 +596,9 @@ def create_app(
             except (KeyError, TypeError, ValueError):
                 return None
 
+        def _parse_box(key: str) -> dict[str, int] | None:
+            return _parse_box_from_value(payload.get(key))
+
         capture = _parse_box("capture")
         left = _parse_box("left")
         right = _parse_box("right")
@@ -530,6 +607,20 @@ def create_app(
                 "error": "Body must contain left and right objects each "
                          "with x, y, width, height fields"
             }), 400
+        has_alternate = "alternate" in payload
+        alternate_payload = payload.get("alternate")
+        alternate_boxes = None
+        if has_alternate and alternate_payload is not None:
+            if not isinstance(alternate_payload, dict):
+                return jsonify({"error": "alternate must contain left and right boxes"}), 400
+            alternate_left = _parse_box_from_value(alternate_payload.get("left"))
+            alternate_right = _parse_box_from_value(alternate_payload.get("right"))
+            if alternate_left is None or alternate_right is None:
+                return jsonify({
+                    "error": "alternate must contain left and right boxes with "
+                             "x, y, width, height fields"
+                }), 400
+            alternate_boxes = {"left": alternate_left, "right": alternate_right}
 
         with settings_lock:
             updated_settings = copy.deepcopy(active_settings)
@@ -537,6 +628,8 @@ def create_app(
             updated_settings["ocr"]["capture_regions"]["scoresheet"] = capture
         updated_settings["ocr"]["name_boxes"]["left"] = left
         updated_settings["ocr"]["name_boxes"]["right"] = right
+        if has_alternate:
+            updated_settings["ocr"]["alternate_name_boxes"] = alternate_boxes
 
         try:
             validated = watcher.write(updated_settings)

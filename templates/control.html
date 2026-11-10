@@ -66,6 +66,7 @@
     #ocr-automated-section { margin-top: 10px; padding: 10px; border: 1px solid #434a56; border-radius: 8px; }
     #ocr-automated-section h2 { margin: 0 0 8px; font-size: 15px; color: var(--overlay-accent-color); }
     .ocr-crops { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+    .ocr-pair-label { margin: 8px 0 4px; color: var(--overlay-muted-color); font-size: 12px; }
     .ocr-crop-panel { display: flex; flex-direction: column; gap: 4px; align-items: center; flex: 1; min-width: 120px; }
     .ocr-crop-panel label { font-size: 12px; color: var(--overlay-muted-color); }
     .ocr-crop-panel img { max-width: 100%; max-height: 80px; border: 1px solid #434a56; border-radius: 4px; background: #10141c; }
@@ -175,6 +176,7 @@
         <button id="refresh-ocr-preview" type="button">Refresh Preview</button>
         <a class="ocr-tool-link" href="/calibrate" target="_blank">Calibrate OCR Tool</a>
       </div>
+      <h3 class="ocr-pair-label">Current broadcast area</h3>
       <div class="ocr-crops">
         <div class="ocr-crop-panel">
           <label>Left name crop</label>
@@ -187,6 +189,21 @@
           <img id="ocr-right-img" src="" alt="Right name crop" width="250" height="50">
           <div class="ocr-crop-text" id="ocr-right-text"></div>
           <div class="ocr-crop-conf" id="ocr-right-conf"></div>
+        </div>
+      </div>
+      <h3 class="ocr-pair-label">Alternate broadcast area</h3>
+      <div class="ocr-crops">
+        <div class="ocr-crop-panel">
+          <label>Alternate left name crop</label>
+          <img id="ocr-alt-left-img" src="" alt="Alternate left name crop" width="250" height="50">
+          <div class="ocr-crop-text" id="ocr-alt-left-text"></div>
+          <div class="ocr-crop-conf" id="ocr-alt-left-conf"></div>
+        </div>
+        <div class="ocr-crop-panel">
+          <label>Alternate right name crop</label>
+          <img id="ocr-alt-right-img" src="" alt="Alternate right name crop" width="250" height="50">
+          <div class="ocr-crop-text" id="ocr-alt-right-text"></div>
+          <div class="ocr-crop-conf" id="ocr-alt-right-conf"></div>
         </div>
       </div>
     </section>
@@ -407,24 +424,35 @@
           return data;
         })
         .then(data => {
-          if (data.left) {
-            document.getElementById("ocr-left-img").src = "data:image/png;base64," + data.left;
-          }
-          if (data.right) {
-            document.getElementById("ocr-right-img").src = "data:image/png;base64," + data.right;
-          }
-          document.getElementById("ocr-left-text").textContent = data.leftText || "";
-          document.getElementById("ocr-right-text").textContent = data.rightText || "";
-          document.getElementById("ocr-left-conf").textContent =
-            data.leftConfidence != null ? `${Math.round(data.leftConfidence * 100)}% confidence` : "";
-          document.getElementById("ocr-right-conf").textContent =
-            data.rightConfidence != null ? `${Math.round(data.rightConfidence * 100)}% confidence` : "";
+          renderOcrCropPair("", {
+            left: data.left,
+            right: data.right,
+            leftText: data.leftText,
+            rightText: data.rightText,
+            leftConfidence: data.leftConfidence,
+            rightConfidence: data.rightConfidence
+          });
+          renderOcrCropPair("alt-", data.alternate);
         })
         .catch(error => {
           document.getElementById("ocr-status").textContent =
             `OCR preview failed: ${error.message}`;
         })
         .finally(() => button.disabled = false);
+    }
+    function renderOcrCropPair(prefix, pair) {
+      for (const side of ["left", "right"]) {
+        const image = document.getElementById(`ocr-${prefix}${side}-img`);
+        const imageData = pair ? pair[side] : "";
+        image.style.display = imageData ? "" : "none";
+        image.src = imageData ? "data:image/png;base64," + imageData : "";
+        document.getElementById(`ocr-${prefix}${side}-text`).textContent =
+          pair ? pair[`${side}Text`] || "" : "Not calibrated";
+        document.getElementById(`ocr-${prefix}${side}-conf`).textContent =
+          pair && pair[`${side}Confidence`] != null
+            ? `${Math.round(pair[`${side}Confidence`] * 100)}% confidence`
+            : "";
+      }
     }
     document.getElementById("refresh-ocr-preview").addEventListener("click", loadCropPreview);
 

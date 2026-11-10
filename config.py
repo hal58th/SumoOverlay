@@ -131,6 +131,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "left": {"x": 298, "y": 38, "width": 250, "height": 49},
             "right": {"x": 653, "y": 38, "width": 250, "height": 49},
         },
+        "alternate_name_boxes": None,
     },
     "overlay": {
         "control": {
@@ -538,20 +539,31 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         isinstance(boxes.get(side), dict) for side in ("left", "right")
     ):
         raise SettingsError("ocr.name_boxes must contain left and right pixel rectangles")
-    normalized_boxes: dict[str, dict[str, int]] = {}
-    for side in ("left", "right"):
-        normalized_boxes[side] = _validate_bounds(
-            boxes[side], f"ocr.name_boxes.{side}"
-        )
-        box = normalized_boxes[side]
-        if (
-            box["x"] + box["width"] > capture_region["width"]
-            or box["y"] + box["height"] > capture_region["height"]
+    for pair_key in ("name_boxes", "alternate_name_boxes"):
+        boxes = ocr[pair_key]
+        if pair_key == "alternate_name_boxes" and boxes is None:
+            continue
+        if not isinstance(boxes, dict) or not all(
+            isinstance(boxes.get(side), dict) for side in ("left", "right")
         ):
             raise SettingsError(
-                f"ocr.name_boxes.{side} must fit inside ocr.capture_regions.scoresheet"
+                f"ocr.{pair_key} must contain left and right pixel rectangles"
             )
-    ocr["name_boxes"] = normalized_boxes
+        normalized_boxes: dict[str, dict[str, int]] = {}
+        for side in ("left", "right"):
+            normalized_boxes[side] = _validate_bounds(
+                boxes[side], f"ocr.{pair_key}.{side}"
+            )
+            box = normalized_boxes[side]
+            if (
+                box["x"] + box["width"] > capture_region["width"]
+                or box["y"] + box["height"] > capture_region["height"]
+            ):
+                raise SettingsError(
+                    f"ocr.{pair_key}.{side} must fit inside "
+                    "ocr.capture_regions.scoresheet"
+                )
+        ocr[pair_key] = normalized_boxes
     settings["ocr"] = ocr
 
     overlay = settings.get("overlay")

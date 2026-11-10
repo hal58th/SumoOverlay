@@ -13,10 +13,12 @@ class OCRScanner:
         get_settings: Callable[[], dict[str, Any]],
         on_match: Callable[[str, str], dict[str, Any] | None],
         logger: logging.Logger,
+        matches_bout: Callable[[str, str], bool] | None = None,
     ) -> None:
         self.get_settings = get_settings
         self.on_match = on_match
         self.logger = logger
+        self.matches_bout = matches_bout
         self._stop = Event()
         self._reset_requested = Event()
         self._lock = RLock()
@@ -187,7 +189,11 @@ class OCRScanner:
         capture_region: dict[str, int],
         name_boxes: dict[str, dict[str, int]],
         frame_is_full_monitor: bool = True,
-    ) -> tuple[tuple[str, float, bytes], tuple[str, float, bytes]]:
+        alternate_name_boxes: dict[str, dict[str, int]] | None = None,
+    ) -> tuple[
+        tuple[tuple[str, float, bytes], tuple[str, float, bytes]],
+        tuple[tuple[str, float, bytes], tuple[str, float, bytes]] | None,
+    ]:
         """Run OCR on explicit name box coordinates from an existing image frame."""
         try:
             import mss.tools
@@ -210,43 +216,60 @@ class OCRScanner:
             raise RuntimeError("Capture region produced an empty image frame.")
 
         reader = self._load_reader()
-        detected: list[tuple[str, float, bytes]] = []
-        for side in ("left", "right"):
-            box = name_boxes[side]
-            left_px = box["x"]
-            top_px = box["y"]
-            right_px = left_px + box["width"]
-            bottom_px = top_px + box["height"]
-            crop = sub_frame[top_px:bottom_px, left_px:right_px]
-            if crop.size == 0:
-                raise RuntimeError(
-                    f"OCR {side} name box produced an empty image crop. "
-                    f"Ensure {side} box ({left_px},{top_px} {box['width']}x{box['height']}) "
-                    f"fits inside capture region ({sub_frame.shape[1]}x{sub_frame.shape[0]})."
-                )
-            results = reader.readtext(crop, detail=1, paragraph=False)
-            readings = [
-                (self.normalize_text(text), float(confidence))
-                for _, text, confidence in results
-            ]
-            if not readings:
-                text, conf = "", 0.0
-            else:
-                text, conf = max(readings, key=lambda r: r[1])
-            try:
-                png_bytes = mss.tools.to_png(crop.tobytes(), (crop.shape[1], crop.shape[0]))
-            except Exception:
-                png_bytes = b""
-            detected.append((text, conf, png_bytes or b""))
 
-        return detected[0], detected[1]
+        def read_pair(
+            pair_boxes: dict[str, dict[str, int]],
+        ) -> tuple[tuple[str, float, bytes], tuple[str, float, bytes]]:
+            detected: list[tuple[str, float, bytes]] = []
+            for side in ("left", "right"):
+                box = pair_boxes[side]
+                left_px = box["x"]
+                top_px = box["y"]
+                right_px = left_px + box["width"]
+                bottom_px = top_px + box["height"]
+                crop = sub_frame[top_px:bottom_px, left_px:right_px]
+                if crop.size == 0:
+                    raise RuntimeError(
+                        f"OCR {side} name box produced an empty image crop. "
+                        f"Ensure {side} box ({left_px},{top_px} "
+                        f"{box['width']}x{box['height']}) fits inside capture region "
+                        f"({sub_frame.shape[1]}x{sub_frame.shape[0]})."
+                    )
+                results = reader.readtext(crop, detail=1, paragraph=False)
+                readings = [
+                    (self.normalize_text(text), float(confidence))
+                    for _, text, confidence in results
+                ]
+                text, conf = (
+                    max(readings, key=lambda reading: reading[1])
+                    if readings
+                    else ("", 0.0)
+                )
+                try:
+                    png_bytes = mss.tools.to_png(
+                        crop.tobytes(), (crop.shape[1], crop.shape[0])
+                    )
+                except Exception:
+                    png_bytes = b""
+                detected.append((text, conf, png_bytes or b""))
+            return detected[0], detected[1]
+
+        primary = read_pair(name_boxes)
+        alternate = (
+            read_pair(alternate_name_boxes) if alternate_name_boxes else None
+        )
+        return primary, alternate
 
     def capture_and_read_with_boxes(
         self,
         monitor_number: int,
         capture_region: dict[str, int],
         name_boxes: dict[str, dict[str, int]],
-    ) -> tuple[tuple[str, float], tuple[str, float]]:
+        alternate_name_boxes: dict[str, dict[str, int]] | None = None,
+    ) -> tuple[
+        tuple[tuple[str, float], tuple[str, float]],
+        tuple[tuple[str, float], tuple[str, float]] | None,
+    ]:
         """Capture and OCR using explicit coordinates instead of reading from settings."""
         try:
             import mss
@@ -284,18 +307,34 @@ class OCRScanner:
                 screenshot.height, screenshot.width, 3
             )
 
-        left, right = self.read_crops_from_frame(
-            frame, capture_region, name_boxes, frame_is_full_monitor=False
+        primary, alternate = self.read_crops_from_frame(
+            frame,
+            capture_region,
+            name_boxes,
+            frame_is_full_monitor=False,
+            alternate_name_boxes=alternate_name_boxes,
         )
-        return (left[0], left[1]), (right[0], right[1])
+        primary_text = (
+            (primary[0][0], primary[0][1]),
+            (primary[1][0], primary[1][1]),
+        )
+        alternate_text = (
+            (
+                (alternate[0][0], alternate[0][1]),
+                (alternate[1][0], alternate[1][1]),
+            )
+            if alternate is not None
+            else None
+        )
+        return primary_text, alternate_text
 
     def capture_crops(
         self, settings: dict[str, Any]
     ) -> tuple[
-        tuple[str, float, bytes],
-        tuple[str, float, bytes],
+        tuple[tuple[str, float, bytes], tuple[str, float, bytes]],
+        tuple[tuple[str, float, bytes], tuple[str, float, bytes]] | None,
     ]:
-        """Capture the two name box crops and return (text, confidence, png_bytes) each."""
+        """Capture each configured name-pair crop from one scoresheet frame."""
         try:
             import mss
             import numpy as np
@@ -304,13 +343,6 @@ class OCRScanner:
                 'Screen-capture packages are missing. Install them with: '
                 r'.\.venv\Scripts\python.exe -m pip install -e ".[ocr]"'
             ) from error
-
-        try:
-            from PIL import Image
-            import io as _pil_io
-            _has_pil = True
-        except ImportError:
-            _has_pil = False
 
         ocr_settings = settings["ocr"]
         capture_region = ocr_settings["capture_regions"]["scoresheet"]
@@ -335,46 +367,20 @@ class OCRScanner:
                 screenshot.height, screenshot.width, 3
             )
 
-        reader = self._load_reader()
-        results_out: list[tuple[str, float, bytes]] = []
-        for side in ("left", "right"):
-            box = ocr_settings["name_boxes"][side]
-            left_px = box["x"]
-            top_px = box["y"]
-            right_px = left_px + box["width"]
-            bottom_px = top_px + box["height"]
-            crop = frame[top_px:bottom_px, left_px:right_px]
-            if crop.size == 0:
-                raise RuntimeError(f"OCR {side} name box produced an empty image crop.")
-
-            ocr_results = reader.readtext(crop, detail=1, paragraph=False)
-            readings = [
-                (self.normalize_text(text), float(confidence))
-                for _, text, confidence in ocr_results
-            ]
-            if not readings:
-                text, conf = "", 0.0
-            else:
-                text, conf = max(readings, key=lambda r: r[1])
-
-            if _has_pil:
-                img = Image.fromarray(crop, mode="RGB")
-                buf = _pil_io.BytesIO()
-                img.save(buf, format="PNG")
-                img_bytes = buf.getvalue()
-            else:
-                img_bytes = b""
-
-            results_out.append((text, conf, img_bytes))
-
-        return (
-            (results_out[0][0], results_out[0][1], results_out[0][2]),
-            (results_out[1][0], results_out[1][1], results_out[1][2]),
+        return self.read_crops_from_frame(
+            frame,
+            capture_region,
+            ocr_settings["name_boxes"],
+            frame_is_full_monitor=False,
+            alternate_name_boxes=ocr_settings.get("alternate_name_boxes"),
         )
 
     def _capture_and_read(
         self, settings: dict[str, Any]
-    ) -> tuple[tuple[str, float], tuple[str, float]]:
+    ) -> tuple[
+        tuple[tuple[str, float], tuple[str, float]],
+        tuple[tuple[str, float], tuple[str, float]] | None,
+    ]:
         try:
             import mss
             import numpy as np
@@ -415,26 +421,38 @@ class OCRScanner:
             )
 
         reader = self._load_reader()
-        detected: list[tuple[str, float]] = []
-        for side in ("left", "right"):
-            box = ocr_settings["name_boxes"][side]
-            left = box["x"]
-            top = box["y"]
-            right = left + box["width"]
-            bottom = top + box["height"]
-            crop = frame[top:bottom, left:right]
-            if crop.size == 0:
-                raise RuntimeError(f"OCR {side} name box produced an empty image crop.")
-            results = reader.readtext(crop, detail=1, paragraph=False)
-            readings = [
-                (self.normalize_text(text), float(confidence))
-                for _, text, confidence in results
-            ]
-            if not readings:
-                detected.append(("", 0.0))
-            else:
-                detected.append(max(readings, key=lambda result: result[1]))
-        return detected[0], detected[1]
+
+        def read_pair(
+            name_boxes: dict[str, dict[str, int]]
+        ) -> tuple[tuple[str, float], tuple[str, float]]:
+            detected: list[tuple[str, float]] = []
+            for side in ("left", "right"):
+                box = name_boxes[side]
+                left = box["x"]
+                top = box["y"]
+                right = left + box["width"]
+                bottom = top + box["height"]
+                crop = frame[top:bottom, left:right]
+                if crop.size == 0:
+                    raise RuntimeError(
+                        f"OCR {side} name box produced an empty image crop."
+                    )
+                results = reader.readtext(crop, detail=1, paragraph=False)
+                readings = [
+                    (self.normalize_text(text), float(confidence))
+                    for _, text, confidence in results
+                ]
+                detected.append(
+                    max(readings, key=lambda result: result[1])
+                    if readings
+                    else ("", 0.0)
+                )
+            return detected[0], detected[1]
+
+        primary = read_pair(ocr_settings["name_boxes"])
+        alternate_boxes = ocr_settings.get("alternate_name_boxes")
+        alternate = read_pair(alternate_boxes) if alternate_boxes else None
+        return primary, alternate
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -458,10 +476,35 @@ class OCRScanner:
                     self._stop.wait(min(1, ocr_settings["interval_seconds"]))
                     continue
 
-                left, right = self._capture_and_read(settings)
+                primary, alternate = self._capture_and_read(settings)
+                minimum_confidence = ocr_settings["minimum_confidence"]
+
+                def trusted_pair(
+                    pair: tuple[tuple[str, float], tuple[str, float]],
+                ) -> tuple[str, str]:
+                    left_reading, right_reading = pair
+                    return (
+                        left_reading[0]
+                        if left_reading[1] >= minimum_confidence
+                        else "",
+                        right_reading[0]
+                        if right_reading[1] >= minimum_confidence
+                        else "",
+                    )
+
+                primary_names = trusted_pair(primary)
+                if alternate is not None and self.matches_bout is not None:
+                    alternate_names = trusted_pair(alternate)
+                    if not self.matches_bout(*primary_names) and self.matches_bout(
+                        *alternate_names
+                    ):
+                        primary = alternate
+                        primary_names = alternate_names
+
+                left, right = primary
                 if (
-                    left[1] < ocr_settings["minimum_confidence"]
-                    and right[1] < ocr_settings["minimum_confidence"]
+                    left[1] < minimum_confidence
+                    and right[1] < minimum_confidence
                 ):
                     self._candidate = None
                     self._candidate_count = 0
@@ -481,19 +524,8 @@ class OCRScanner:
                         ),
                     )
                 else:
-                    left_name = (
-                        left[0]
-                        if left[1] >= ocr_settings["minimum_confidence"]
-                        else ""
-                    )
-                    right_name = (
-                        right[0]
-                        if right[1] >= ocr_settings["minimum_confidence"]
-                        else ""
-                    )
                     self.observe(
-                        left_name,
-                        right_name,
+                        *primary_names,
                         ocr_settings["stable_readings"],
                     )
                 self._stop.wait(ocr_settings["interval_seconds"])
