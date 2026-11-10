@@ -42,12 +42,14 @@
       upcomingOverlay.style.borderStyle = style.border.width > 0 ? "solid" : "none";
       upcomingOverlay.style.borderColor = style.border.color;
 
-      const matchups = state.upcomingMatches.map(
+      const matchups = state.upcomingMatches.slice(0, style.match_count).map(
         match => `${match.east} vs ${match.west}`
       );
-      upcomingMatchups.textContent = matchups.length
-        ? matchups.join(" - ")
-        : "No upcoming matches";
+      upcomingMatchups.textContent = state.isLastMatchOfDay
+        ? "Musubi-no-ichiban (last match)"
+        : matchups.length
+          ? matchups.join(" - ")
+          : "No upcoming matches";
       upcomingOverlay.hidden = false;
     }
 

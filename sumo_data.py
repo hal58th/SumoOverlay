@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+import logging
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import Lock, local
 from typing import Any, TypeVar
@@ -384,6 +385,11 @@ class BashoSchedule:
         self._divisions = DIVISION_ORDER if division is None else (division,)
         self._h2h_cache: dict[tuple[int, int], list[dict[str, Any]]] = {}
         self._h2h_cache_lock = Lock()
+        self._h2h_pair_locks: dict[tuple[int, int], Lock] = {}
+        self._h2h_prefetch_pending: set[tuple[int, int]] = set()
+        self._h2h_prefetch_executor = ThreadPoolExecutor(
+            max_workers=3, thread_name_prefix="h2h-prefetch"
+        )
         self._rikishi_cache: dict[int, dict[str, Any]] = {}
         self._career_matches_cache: dict[int, list[dict[str, Any]]] = {}
         self._prior_days = [
@@ -553,14 +559,60 @@ class BashoSchedule:
                 losses += 1
         return {"wins": wins, "losses": losses, "matches": wins + losses}
 
+    def prefetch_head_to_head(self, bouts: list[Bout]) -> None:
+        for bout in bouts:
+            pair = (
+                min(bout.east.rikishi_id, bout.west.rikishi_id),
+                max(bout.east.rikishi_id, bout.west.rikishi_id),
+            )
+            with self._h2h_cache_lock:
+                if pair in self._h2h_cache or pair in self._h2h_prefetch_pending:
+                    continue
+                self._h2h_prefetch_pending.add(pair)
+            future = self._h2h_prefetch_executor.submit(
+                self._fetch_head_to_head_matches, pair
+            )
+            future.add_done_callback(
+                lambda completed, pair=pair: self._head_to_head_prefetch_done(
+                    pair, completed
+                )
+            )
+
+    def _head_to_head_prefetch_done(
+        self, pair: tuple[int, int], future: Future[list[dict[str, Any]]]
+    ) -> None:
+        with self._h2h_cache_lock:
+            self._h2h_prefetch_pending.discard(pair)
+        try:
+            future.result()
+        except SumoApiError as error:
+            logging.getLogger(__name__).warning(
+                "Unable to prefetch head-to-head data for rikishi %s and %s: %s",
+                pair[0],
+                pair[1],
+                error,
+            )
+
+    def _fetch_head_to_head_matches(
+        self, pair: tuple[int, int]
+    ) -> list[dict[str, Any]]:
+        with self._h2h_cache_lock:
+            pair_lock = self._h2h_pair_locks.setdefault(pair, Lock())
+        with pair_lock:
+            with self._h2h_cache_lock:
+                matches = self._h2h_cache.get(pair)
+            if matches is None:
+                matches = self.client.fetch_head_to_head(*pair)
+                with self._h2h_cache_lock:
+                    self._h2h_cache[pair] = matches
+            return matches
+
     def head_to_head(self, bout: Bout) -> dict[str, Any]:
         pair = (
             min(bout.east.rikishi_id, bout.west.rikishi_id),
             max(bout.east.rikishi_id, bout.west.rikishi_id),
         )
-        with self._h2h_cache_lock:
-            if pair not in self._h2h_cache:
-                self._h2h_cache[pair] = self.client.fetch_head_to_head(*pair)
+        matches = self._fetch_head_to_head_matches(pair)
 
         target = (
             self.basho_id,
@@ -572,7 +624,7 @@ class BashoSchedule:
         west_wins = 0
         history: list[str] = []
         prior_matches: list[tuple[tuple[str, int, int, int], int | None]] = []
-        for match in self._h2h_cache[pair]:
+        for match in matches:
             match_key = _match_order_key(match, "head-to-head history")
             if match_key >= target:
                 continue

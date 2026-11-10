@@ -87,33 +87,78 @@ def test_manual_controls_update_state_and_emit_websocket_event():
     socket_client.disconnect()
 
 
-def test_upcoming_matches_state_tracks_the_next_four_bouts():
+def test_controller_prefetches_current_and_next_two_bouts_on_startup_and_navigation():
     schedule = FakeSchedule(
-        [make_bout(index, index * 2, index * 2 + 1) for index in range(1, 7)]
+        [
+            make_bout(1, 10, 11),
+            make_bout(2, 12, 13),
+            make_bout(3, 14, 15),
+            make_bout(4, 16, 17),
+        ]
+    )
+    schedule.prefetch_batches = []
+    schedule.prefetch_head_to_head = lambda bouts: schedule.prefetch_batches.append(
+        [bout.match_no for bout in bouts]
+    )
+    app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
+    controller = app.extensions["bout_controller"]
+
+    assert schedule.prefetch_batches == [[1, 2, 3]]
+
+    controller.move(2)
+
+    assert schedule.prefetch_batches[-1] == [3, 4]
+
+
+def test_upcoming_matches_state_tracks_the_configured_number_of_bouts():
+    schedule = FakeSchedule(
+        [make_bout(index, index * 2, index * 2 + 1) for index in range(1, 10)]
     )
     app = create_app(schedule=schedule, test_config={"TESTING": True}, watch_config=False)
     client = app.test_client()
 
-    upcoming = client.get("/api/state").json["upcomingMatches"]
-    assert upcoming == [
-        {"east": "East 4", "west": "West 5"},
-        {"east": "East 6", "west": "West 7"},
-        {"east": "East 8", "west": "West 9"},
-        {"east": "East 10", "west": "West 11"},
-    ]
+    initial_state = client.get("/api/state").json
+    assert initial_state["isLastMatchOfDay"] is False
+    upcoming = initial_state["upcomingMatches"]
+    assert len(upcoming) == 6
+    assert upcoming[0] == {"east": "East 4", "west": "West 5"}
+    assert upcoming[-1] == {"east": "East 14", "west": "West 15"}
 
     response = client.post("/api/control/next")
     assert response.status_code == 200
-    assert response.json["upcomingMatches"] == [
-        {"east": "East 6", "west": "West 7"},
-        {"east": "East 8", "west": "West 9"},
-        {"east": "East 10", "west": "West 11"},
-        {"east": "East 12", "west": "West 13"},
-    ]
+    assert len(response.json["upcomingMatches"]) == 6
+    assert response.json["upcomingMatches"][0] == {
+        "east": "East 6",
+        "west": "West 7",
+    }
 
-    for _ in range(4):
+    for _ in range(7):
         response = client.post("/api/control/next")
     assert response.json["upcomingMatches"] == []
+    assert response.json["isLastMatchOfDay"] is True
+
+
+def test_upcoming_match_count_is_configurable_in_settings(tmp_path):
+    settings = default_settings()
+    settings["overlay"]["upcomingmatches"]["match_count"] = 3
+    settings["overlay"]["slimhalf"]["show_upcoming_matches"] = True
+    settings["overlay"]["slimhalf"]["upcoming_matches_count"] = 8
+    settings_path = tmp_path / "config.yaml"
+    write_config(settings_path, settings)
+    schedule = FakeSchedule(
+        [make_bout(index, index * 2, index * 2 + 1) for index in range(1, 12)]
+    )
+    app = create_app(
+        schedule=schedule,
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+
+    state = app.test_client().get("/api/state").json
+    assert len(state["upcomingMatches"]) == 8
+    assert state["settings"]["overlay"]["upcomingmatches"]["match_count"] == 3
+    assert state["settings"]["overlay"]["slimhalf"]["upcoming_matches_count"] == 8
 
 
 def test_upcoming_matches_overlay_uses_configured_template(tmp_path):
@@ -374,6 +419,13 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'id="west-record"' in slimhalf_overlay.text
     assert "eastRecord.textContent = formatRecord(state.east.record);" in slimhalf_overlay.text
     assert "eastRecord.hidden = !settings.show_current_score;" in slimhalf_overlay.text
+    assert 'id="upcoming-matches"' in slimhalf_overlay.text
+    assert "settings.show_upcoming_matches" in slimhalf_overlay.text
+    assert "settings.upcoming_matches_count" in slimhalf_overlay.text
+    assert "`On Deck: ${" in slimhalf_overlay.text
+    assert 'upcoming.join(" | ")' in slimhalf_overlay.text
+    assert "style.colors.upcoming_matches" in slimhalf_overlay.text
+    assert "style.font_sizes.upcoming_matches" in slimhalf_overlay.text
     assert "slimOverlay.hidden = false;" in slimhalf_overlay.text
     assert 'class="configured-box slim-strip slimfull"' in slimfull_overlay.text
     assert 'state.settings.overlay["slimfull"]' in slimfull_overlay.text
@@ -396,11 +448,19 @@ def test_pages_and_kanji_lookup_are_available():
     )[1].split("}", maxsplit=1)[0]
     assert "gap: 10px;" in slimhalf_line_styles
     assert "gap: 10px;" in slimfull_line_styles
+    slim_name_styles = all_styles.split(".slim-name {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "flex-shrink: 0;" in slim_name_styles
     assert "var(--slim-opacity, 1)" in all_styles
     assert "var(--slim-text-opacity, 1)" in all_styles
+    assert "var(--slim-upcoming-matches-color" in all_styles
+    assert "var(--slim-upcoming-matches-font-size" in all_styles
     assert 'class="configured-box slim-strip upcoming-strip"' in upcoming_overlay.text
-    assert "state.upcomingMatches.map(" in upcoming_overlay.text
+    assert "state.upcomingMatches.slice(0, style.match_count).map(" in upcoming_overlay.text
     assert "matchups.join(\" - \")" in upcoming_overlay.text
+    assert "state.upcomingMatches.slice(0, style.match_count)" in upcoming_overlay.text
+    assert '"Musubi-no-ichiban (last match)"' in upcoming_overlay.text
     assert 'state.settings.overlay.upcomingmatches' in upcoming_overlay.text
     assert 'class="upcoming-label">Upcoming:</span>' in upcoming_overlay.text
     assert ".upcoming-label" in all_styles
@@ -436,6 +496,18 @@ def test_pages_and_kanji_lookup_are_available():
     assert '"--prematch-border-color"' in pre_match_html
     assert "--prematch-border-width: 1px;" in all_styles
     assert "max-height: 14em;" in all_styles
+    west_rank_record_styles = all_styles.split(".west .rank-record {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    west_profile_styles = all_styles.split(".west .wrestler-profile {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "justify-content: flex-start;" in west_rank_record_styles
+    assert "text-align: left;" in west_profile_styles
+    west_name_styles = all_styles.split(".west .wrestler-name {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "text-align: left;" in west_name_styles
     assert "-webkit-line-clamp: 2;" in all_styles
     assert "--prematch-border-style: solid;" in all_styles
     assert "--overlay-border-width: 0px;" in all_styles
@@ -886,26 +958,75 @@ def test_overlay_dimensions_are_positive_integers_and_reject_position_settings()
 
 def test_slim_scoreboard_defaults_and_independent_overrides():
     settings = default_settings()
-    assert settings["overlay"]["slimhalf"]["width"] == 540
+    assert settings["overlay"]["slimhalf"]["width"] == 960
     assert settings["overlay"]["slimhalf"]["height"] == 36
-    assert settings["overlay"]["slimfull"]["width"] == 1080
+    assert settings["overlay"]["slimfull"]["width"] == 1920
     assert settings["overlay"]["slimfull"]["height"] == 36
+    assert settings["overlay"]["slimhalf"]["show_upcoming_matches"] is False
+    assert settings["overlay"]["slimfull"]["show_upcoming_matches"] is False
+    assert settings["overlay"]["slimhalf"]["upcoming_matches_count"] == 6
+    assert settings["overlay"]["slimfull"]["upcoming_matches_count"] == 6
+    assert settings["overlay"]["slimfull"]["opacity"] == 0.85
+    assert settings["overlay"]["slimfull"]["text_opacity"] == 0.85
+    assert settings["overlay"]["slimfull"]["font_sizes"] == {
+        "text": 24,
+        "muted": 20,
+        "accent": 20,
+        "current_score": 24,
+        "result": 24,
+        "upcoming_matches": 24,
+    }
+    assert settings["overlay"]["slimhalf"]["font_sizes"]["upcoming_matches"] == 18
+    assert settings["overlay"]["slimhalf"]["colors"]["upcoming_matches"] == "#ffffff"
+    assert settings["overlay"]["slimfull"]["colors"]["upcoming_matches"] == "#ffffff"
     assert settings["overlay"]["slimhalf"]["show_current_score"] is True
     assert settings["overlay"]["slimfull"]["show_current_score"] is True
-    assert settings["overlay"]["upcomingmatches"]["width"] == 1080
+    assert settings["overlay"]["upcomingmatches"]["width"] == 1920
     assert settings["overlay"]["upcomingmatches"]["height"] == 36
+    assert settings["overlay"]["upcomingmatches"]["match_count"] == 6
+    assert settings["overlay"]["upcomingmatches"]["opacity"] == 0.85
+    assert settings["overlay"]["upcomingmatches"]["text_opacity"] == 0.85
+    assert settings["overlay"]["upcomingmatches"]["font_sizes"] == {
+        "text": 22,
+        "muted": 20,
+        "accent": 20,
+        "current_score": 20,
+        "result": 20,
+    }
 
     settings["overlay"]["slimhalf"]["width"] = 600
     settings["overlay"]["slimhalf"]["opacity"] = 0.7
     settings["overlay"]["slimhalf"]["show_current_score"] = False
     settings["overlay"]["slimfull"]["font_sizes"]["text"] = 20
     settings["overlay"]["slimfull"]["colors"]["accent"] = "#123456"
+    settings["overlay"]["slimhalf"]["font_sizes"]["upcoming_matches"] = 21
+    settings["overlay"]["slimhalf"]["colors"]["upcoming_matches"] = "#abcdef"
     validated = validate_settings(settings)
     assert validated["overlay"]["slimhalf"]["width"] == 600
     assert validated["overlay"]["slimhalf"]["opacity"] == 0.7
     assert validated["overlay"]["slimhalf"]["show_current_score"] is False
     assert validated["overlay"]["slimfull"]["font_sizes"]["text"] == 20
     assert validated["overlay"]["slimfull"]["colors"]["accent"] == "#123456"
+    assert validated["overlay"]["slimhalf"]["font_sizes"]["upcoming_matches"] == 21
+    assert validated["overlay"]["slimhalf"]["colors"]["upcoming_matches"] == "#abcdef"
+
+
+@pytest.mark.parametrize(
+    ("overlay_name", "key", "value", "error"),
+    [
+        ("upcomingmatches", "match_count", 0, "match_count"),
+        ("upcomingmatches", "match_count", True, "match_count"),
+        ("slimhalf", "upcoming_matches_count", 0, "upcoming_matches_count"),
+        ("slimfull", "upcoming_matches_count", 1.5, "upcoming_matches_count"),
+        ("slimhalf", "show_upcoming_matches", "false", "show_upcoming_matches"),
+    ],
+)
+def test_upcoming_match_options_are_validated(overlay_name, key, value, error):
+    settings = default_settings()
+    settings["overlay"][overlay_name][key] = value
+
+    with pytest.raises(SettingsError, match=error):
+        validate_settings(settings)
 
 
 @pytest.mark.parametrize("overlay_name", ["slimhalf", "slimfull"])

@@ -1,7 +1,7 @@
 # Sumo Broadcast Overlay
 
 This program creates a scoreboard overlay for sumo broadcast, so you can see the English wrestler names, plus a prematch overlay that shows head to head stats. This can be used for streaming, recording, or watching by yourself.
-It uses [OCR](#ocr-bout-detection) to recognize wrestler names on the broadcast to determine what match you are on, or you can control it manually. We download a basho's bout lists and head to head stats from [sumo-api.com](https://sumo-api.com) (thank you sumo-api, this project wouldn't be possible without it).
+It uses [OCR](#ocr-bout-detection) to recognize wrestler names on the broadcast to determine what match you are on, or you can control it manually. We download a basho's bout lists and head to head stats from [sumo-api.com](https://sumo-api.com) (thank you sumo-api, this project wouldn't be possible without it). Head-to-head results for the current bout and next two bouts are fetched in the background and cached in memory.
 
 1. **Scoreboard overlay** — a persistent scoreboard overlay with the current division, wrestler names, their records before this bout, and abbreviated ranks. 
 
@@ -107,9 +107,9 @@ In OBS, add **Browser** sources for the overlays you want to use:
 
 1. Scoreboard, always-on scoreboard overlay: `http://127.0.0.1:5000/scoreboard`. Set the Browser Source width and height to `overlay.scoreboard.width` and `overlay.scoreboard.height` in `config.yaml`.
 2. Pre-match H2H card: `http://127.0.0.1:5000/prematch`. Set its Browser Source width and height to `overlay.prematch.width` and `overlay.prematch.height`.
-3. Slim half-width scoreboard: `http://127.0.0.1:5000/scoreboard/slimhalf`. Defaults to 540 by 36 pixels and shows names, abbreviated ranks, current scores, and division.
-4. Slim full-width scoreboard: `http://127.0.0.1:5000/scoreboard/slimfull`. Defaults to 1080 by 36 pixels and shows current scores, head-to-head score (or “First Meeting”), division name, and bout count on the same line.
-5. Upcoming matches: `http://127.0.0.1:5000/upcomingmatches`. Defaults to 1080 by 36 pixels and shows up to the next four scheduled matchups after the selected bout.
+3. Slim half-width scoreboard: `http://127.0.0.1:5000/scoreboard/slimhalf`. Defaults to 960 by 36 pixels and shows names, abbreviated ranks, current scores, and division.
+4. Slim full-width scoreboard: `http://127.0.0.1:5000/scoreboard/slimfull`. Defaults to 1920 by 36 pixels and shows current scores, head-to-head score (or “First Meeting”), division name, and bout count on the same line.
+5. Upcoming matches: `http://127.0.0.1:5000/upcomingmatches`. Defaults to 1920 by 36 pixels and shows up to six scheduled matchups after the selected bout. On the final bout of the day, it displays “Musubi-no-ichiban (last match)”.
 
 In OBS, position each Browser Source on the scene as desired. The overlay content is rendered at the configured dimensions in fixed CSS pixels and does not scale to fit the browser viewport. To change an overlay's rendered size, edit its width and height in `config.yaml`, then use those same values for the OBS Browser Source dimensions.
 
@@ -135,15 +135,20 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `control.pre_match_pinned` | `true` or `false`. When true, keeps the pre-match overlay visible until you hide it from the Control page. |
 | `overlay.scoreboard.width`, `overlay.scoreboard.height` | Fixed pixel width and height for the main overlay and its OBS Browser Source. |
 | `overlay.prematch.width`, `overlay.prematch.height` | Fixed pixel width and height for the pre-match overlay and its OBS Browser Source. |
-| `overlay.slimhalf.width`, `overlay.slimhalf.height` | Fixed pixel size of the half-width slim scoreboard. Defaults to 540 by 36. |
-| `overlay.slimfull.width`, `overlay.slimfull.height` | Fixed pixel size of the full-width slim scoreboard. Defaults to 1080 by 36. |
-| `overlay.upcomingmatches.width`, `overlay.upcomingmatches.height` | Fixed pixel size of the upcoming matches overlay. Defaults to 1080 by 36. |
+| `overlay.slimhalf.width`, `overlay.slimhalf.height` | Fixed pixel size of the half-width slim scoreboard. Defaults to 960 by 36. |
+| `overlay.slimfull.width`, `overlay.slimfull.height` | Fixed pixel size of the full-width slim scoreboard. Defaults to 1920 by 36. |
+| `overlay.upcomingmatches.width`, `overlay.upcomingmatches.height` | Fixed pixel size of the upcoming matches overlay. Defaults to 1920 by 36. |
+| `overlay.upcomingmatches.match_count` | Number of upcoming matchups to display. Defaults to `6`. |
 | `overlay.scoreboard.show_current_score`, `overlay.slimhalf.show_current_score`, `overlay.slimfull.show_current_score` | Whether each scoreboard shows wrestler current scores. Defaults to `true`. |
+| `overlay.slimhalf.show_upcoming_matches`, `overlay.slimfull.show_upcoming_matches` | Whether to append upcoming matchups to the end of each slim scoreboard line. Defaults to `false`; the appended text is clipped at the right edge if it does not fit. |
+| `overlay.slimhalf.upcoming_matches_count`, `overlay.slimfull.upcoming_matches_count` | Number of upcoming matchups to append when the corresponding `show_upcoming_matches` option is enabled. Defaults to `6`. |
+| `overlay.slimhalf.font_sizes.upcoming_matches`, `overlay.slimfull.font_sizes.upcoming_matches` | Font size in pixels for the “On Deck” label and upcoming wrestler names on each slim scoreboard. Defaults to `18` for slimhalf and `24` for slimfull. |
+| `overlay.slimhalf.colors.upcoming_matches`, `overlay.slimfull.colors.upcoming_matches` | Text color for the “On Deck” label and upcoming wrestler names on each slim scoreboard. Defaults to `#ffffff`. |
 | `overlay.scoreboard.border`, `overlay.prematch.border`, `overlay.slimhalf.border`, `overlay.slimfull.border`, `overlay.upcomingmatches.border` | Border customization for each overlay. Accepts `width` (or `thickness`) in pixels and hex `color` (e.g. `width: 1`, `color: "#ffffff38"`). Set `width: 0` or `border: false` to disable the border completely. The scoreboard, slim scoreboard, and upcoming matches borders default to 0px; the pre-match overlay defaults to a 1px border. |
 | `overlay.control.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on the Control page. |
-| `overlay.scoreboard.font_sizes`, `overlay.prematch.font_sizes`, `overlay.slimhalf.font_sizes`, `overlay.slimfull.font_sizes`, `overlay.upcomingmatches.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on each overlay. |
-| `overlay.scoreboard.opacity`, `overlay.prematch.opacity`, `overlay.slimhalf.opacity`, `overlay.slimfull.opacity`, `overlay.upcomingmatches.opacity` | Background opacity, from `0` (transparent) to `1` (opaque). Scoreboard, slim scoreboard, and upcoming matches overlays default to `1`; the pre-match overlay defaults to `0.95`. |
-| `overlay.scoreboard.text_opacity`, `overlay.prematch.text_opacity`, `overlay.slimhalf.text_opacity`, `overlay.slimfull.text_opacity`, `overlay.upcomingmatches.text_opacity` | Text opacity for each overlay, from `0` (transparent) to `1` (opaque). All default to `1`; background opacity is unchanged. |
+| `overlay.scoreboard.font_sizes`, `overlay.prematch.font_sizes`, `overlay.slimhalf.font_sizes`, `overlay.slimfull.font_sizes`, `overlay.upcomingmatches.font_sizes` | Font sizes in pixels for `text`, `muted`, `accent`, `current_score`, and `result` text on each overlay. The slim scoreboard font-size settings also accept `upcoming_matches`. |
+| `overlay.scoreboard.opacity`, `overlay.prematch.opacity`, `overlay.slimhalf.opacity`, `overlay.slimfull.opacity`, `overlay.upcomingmatches.opacity` | Background opacity, from `0` (transparent) to `1` (opaque). Scoreboard and slimhalf default to `1`; prematch defaults to `0.95`; slimfull and upcomingmatches default to `0.85`. |
+| `overlay.scoreboard.text_opacity`, `overlay.prematch.text_opacity`, `overlay.slimhalf.text_opacity`, `overlay.slimfull.text_opacity`, `overlay.upcomingmatches.text_opacity` | Text opacity for each overlay, from `0` (transparent) to `1` (opaque). Scoreboard, prematch, and slimhalf default to `1`; slimfull and upcomingmatches default to `0.85`. |
 | `overlay.control`, `overlay.scoreboard`, `overlay.prematch`, `overlay.slimhalf`, `overlay.slimfull`, `overlay.upcomingmatches` | Independent font and background settings for the Control page and overlays. Each accepts `font_family` and `colors` as described below. |
 | `templates.scoreboard`, `templates.prematch`, `templates.slimhalf`, `templates.slimfull`, `templates.upcomingmatches` | HTML filenames for the overlays. The app searches `custom_templates` first, then the built-in `templates` folder. |
 | `ocr.enabled` | Enables the OCR scanner when the app is started normally. |
@@ -154,7 +159,7 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `ocr.capture_regions.scoresheet` | Rectangle around the sumo broadcast scoreboard, in pixels relative to the selected monitor. |
 | `ocr.name_boxes.left`, `ocr.name_boxes.right` | Name rectangles in pixels relative to the top-left of `ocr.capture_regions.scoresheet`. |
 
-Each of `overlay.control`, `overlay.scoreboard`, `overlay.prematch`, `overlay.slimhalf`, `overlay.slimfull`, and `overlay.upcomingmatches` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and bout metadata), `current_score` (wrestlers' current records), `result` (announced bout results and errors), and `background` (background color). All overlay sections accept `font_sizes` in pixels for their text groups. On the Control page, smaller labels retain their proportions to the main `text` and `muted` sizes. `accent` and `current_score` have independent sizes and colors; smaller labels retain their proportions relative to the main text in that color group. For example:
+Each of `overlay.control`, `overlay.scoreboard`, `overlay.prematch`, `overlay.slimhalf`, `overlay.slimfull`, and `overlay.upcomingmatches` has its own `font_family` and `colors` settings. `font_family` is a CSS font-family list (for example, `"Arial, sans-serif"`). The `colors` object accepts hex colors for `text` (general text), `muted` (ranks and supporting details), `accent` (division labels and bout metadata), `current_score` (wrestlers' current records), `result` (announced bout results and errors), and `background` (background color). The slim scoreboard `colors` and `font_sizes` objects additionally accept `upcoming_matches` for the “On Deck” label and upcoming wrestler names. All overlay sections accept `font_sizes` in pixels for their text groups. On the Control page, smaller labels retain their proportions to the main `text` and `muted` sizes. `accent` and `current_score` have independent sizes and colors; smaller labels retain their proportions relative to the main text in that color group. For example:
 
 ```yaml
 overlay:

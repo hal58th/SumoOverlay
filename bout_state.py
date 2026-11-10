@@ -26,17 +26,28 @@ class BoutController:
             raise SumoApiError("The selected basho day has no bouts")
         self._index = 0
         self._lock = RLock()
+        self._prefetch_head_to_head()
 
-    def state(self, include_head_to_head: bool = False) -> dict[str, Any]:
+    def _prefetch_head_to_head(self) -> None:
+        prefetch = getattr(self._schedule, "prefetch_head_to_head", None)
+        if callable(prefetch):
+            prefetch(self._bouts[self._index : self._index + 3])
+
+    def state(
+        self, include_head_to_head: bool = False, upcoming_count: int = 6
+    ) -> dict[str, Any]:
         with self._lock:
             bout = self._bouts[self._index]
             payload = bout.to_payload(self._index, len(self._bouts))
+            payload["isLastMatchOfDay"] = self._index == len(self._bouts) - 1
             payload["upcomingMatches"] = [
                 {
                     "east": upcoming.east.name,
                     "west": upcoming.west.name,
                 }
-                for upcoming in self._bouts[self._index + 1 : self._index + 5]
+                for upcoming in self._bouts[
+                    self._index + 1 : self._index + 1 + upcoming_count
+                ]
             ]
             division_bouts = [
                 (index, scheduled_bout)
@@ -93,6 +104,7 @@ class BoutController:
                 raise SumoApiError("The selected basho day has no bouts")
             self._bouts = refreshed_bouts
             self._index = min(target, len(self._bouts) - 1)
+            self._prefetch_head_to_head()
             return self._bouts[self._index].to_payload(self._index, len(self._bouts))
 
     def jump_to_division(self, division_number: int) -> dict[str, Any]:
@@ -111,6 +123,7 @@ class BoutController:
             if target is None:
                 raise ValueError(f"Division {division_number} is not in the loaded schedule")
             self._index = target
+            self._prefetch_head_to_head()
             return self._bouts[self._index].to_payload(self._index, len(self._bouts))
 
     def select_bout_by_kanji(self, left_name: str, right_name: str) -> dict[str, Any] | None:
@@ -124,6 +137,7 @@ class BoutController:
             if not isinstance(target, int) or not 0 <= target < len(self._bouts):
                 raise SumoApiError("OCR schedule lookup returned an invalid bout index")
             self._index = target
+            self._prefetch_head_to_head()
             return self._bouts[self._index].to_payload(self._index, len(self._bouts))
 
     def replace_schedule(self, schedule: Any, reset_index: bool = False) -> None:
@@ -134,3 +148,4 @@ class BoutController:
             self._schedule = schedule
             self._bouts = bouts
             self._index = 0 if reset_index else min(self._index, len(bouts) - 1)
+            self._prefetch_head_to_head()
