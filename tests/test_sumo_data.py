@@ -390,6 +390,11 @@ def test_schedule_returns_cached_broadcast_profile_details():
     schedule.wrestler_profiles(bout)
     assert client.profile_calls == [1, 2]
     assert client.career_calls == [1, 2]
+    assert schedule.wrestler_stable_names(bout) == {
+        "east": "Nishonoseki",
+        "west": "Nishonoseki",
+    }
+    assert client.profile_calls == [1, 2]
 
 
 def test_lifetime_records_include_only_completed_matches_before_selected_bout():

@@ -391,6 +391,8 @@ class BashoSchedule:
             max_workers=3, thread_name_prefix="h2h-prefetch"
         )
         self._rikishi_cache: dict[int, dict[str, Any]] = {}
+        self._rikishi_cache_lock = Lock()
+        self._rikishi_locks: dict[int, Lock] = {}
         self._career_matches_cache: dict[int, list[dict[str, Any]]] = {}
         self._prior_days = [
             self._fetch_day(current_day)
@@ -476,9 +478,28 @@ class BashoSchedule:
         return self._bouts
 
     def _fetch_rikishi(self, rikishi_id: int) -> dict[str, Any]:
-        if rikishi_id not in self._rikishi_cache:
-            self._rikishi_cache[rikishi_id] = self.client.fetch_rikishi(rikishi_id)
-        return self._rikishi_cache[rikishi_id]
+        with self._rikishi_cache_lock:
+            if rikishi_id in self._rikishi_cache:
+                return self._rikishi_cache[rikishi_id]
+            rikishi_lock = self._rikishi_locks.setdefault(rikishi_id, Lock())
+        with rikishi_lock:
+            with self._rikishi_cache_lock:
+                if rikishi_id in self._rikishi_cache:
+                    return self._rikishi_cache[rikishi_id]
+            profile = self.client.fetch_rikishi(rikishi_id)
+            with self._rikishi_cache_lock:
+                self._rikishi_cache[rikishi_id] = profile
+            return profile
+
+    def wrestler_stable_names(self, bout: Bout) -> dict[str, str | None]:
+        """Return the stable names for both participants without loading career history."""
+        stable_names: dict[str, str | None] = {}
+        for side, participant in (("east", bout.east), ("west", bout.west)):
+            stable = self._fetch_rikishi(participant.rikishi_id).get("heya")
+            stable_names[side] = (
+                stable.strip() if isinstance(stable, str) and stable.strip() else None
+            )
+        return stable_names
 
     def wrestler_profiles(self, bout: Bout) -> dict[str, dict[str, Any]]:
         """Return broadcast-safe profile details for both participants."""

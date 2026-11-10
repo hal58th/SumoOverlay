@@ -96,6 +96,7 @@ body {
 
 .slim-name,
 .slim-rank,
+.slim-stable-name,
 .slim-record,
 .slim-head-to-head,
 .slim-versus,
@@ -126,6 +127,16 @@ body {
 .slim-versus {
   color: var(--overlay-muted-color);
   font-size: var(--overlay-muted-font-size);
+}
+
+.slim-stable-name {
+  color: var(--slim-stable-name-color, var(--overlay-muted-color));
+  flex-shrink: 0;
+  font-size: var(--slim-stable-name-font-size, var(--overlay-muted-font-size));
+}
+
+.slim-stable-name[hidden] {
+  display: none;
 }
 
 .slim-record {
@@ -188,6 +199,7 @@ body {
 .main-division,
 .main-record,
 .main-rank,
+.main-stable-name,
 .main-versus {
   opacity: var(--scoreboard-text-opacity, 1);
 }
@@ -213,6 +225,20 @@ body {
   align-items: baseline;
   justify-content: center;
   gap: 8px;
+}
+
+.main-stable-name {
+  color: var(--scoreboard-stable-name-color, var(--overlay-muted-color));
+  font-size: var(--scoreboard-stable-name-font-size, var(--overlay-muted-font-size));
+  font-weight: 500;
+  justify-self: center;
+  margin-top: -4px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.main-stable-name[hidden] {
+  display: none;
 }
 
 .main-center {

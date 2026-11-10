@@ -39,6 +39,7 @@ DEFAULT_SCOREBOARD_FONT_SIZES = {
     "accent": 46,
     "current_score": 36,
     "result": 40,
+    "stable_name": 22,
 }
 DEFAULT_SLIM_FONT_SIZES = {
     "text": 18,
@@ -47,9 +48,23 @@ DEFAULT_SLIM_FONT_SIZES = {
     "current_score": 16,
     "result": 16,
 }
-DEFAULT_SLIM_SCOREBOARD_FONT_SIZES = {
-    **DEFAULT_SLIM_FONT_SIZES,
-    "upcoming_matches": 18,
+DEFAULT_SLIMHALF_FONT_SIZES = {
+    "text": 30,
+    "muted": 20,
+    "accent": 22,
+    "current_score": 24,
+    "result": 24,
+    "upcoming_matches": 22,
+    "stable_name": 20,
+}
+DEFAULT_SLIMFULL_FONT_SIZES = {
+    "text": 30,
+    "muted": 20,
+    "accent": 22,
+    "current_score": 24,
+    "result": 24,
+    "upcoming_matches": 22,
+    "stable_name": 20,
 }
 DEFAULT_PREMATCH_FONT_SIZES = {
     "text": 80,
@@ -131,14 +146,16 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "width": 993,
             "height": 158,
             "show_current_score": True,
-            "opacity": 1,
-            "text_opacity": 1,
+            "show_stable_name": True,
+            "opacity": 0.85,
+            "text_opacity": 0.85,
             "font_sizes": copy.deepcopy(DEFAULT_SCOREBOARD_FONT_SIZES),
             "border": copy.deepcopy(DEFAULT_SCOREBOARD_BORDER),
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
             "colors": {
                 **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
                 "current_score": "#e8bd68",
+                "stable_name": "#d4d8de",
                 "background": "#10141c",
             },
         },
@@ -158,44 +175,41 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         },
         "slimhalf": {
             "width": 960,
-            "height": 36,
+            "height": 52,
             "show_current_score": True,
+            "show_stable_name": True,
             "show_upcoming_matches": False,
-            "upcoming_matches_count": 6,
-            "opacity": 1,
-            "text_opacity": 1,
-            "font_sizes": copy.deepcopy(DEFAULT_SLIM_SCOREBOARD_FONT_SIZES),
+            "upcoming_matches_count": 2,
+            "opacity": 0.85,
+            "text_opacity": 0.85,
+            "font_sizes": copy.deepcopy(DEFAULT_SLIMHALF_FONT_SIZES),
             "border": copy.deepcopy(DEFAULT_SCOREBOARD_BORDER),
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
             "colors": {
                 **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
                 "current_score": "#e8bd68",
                 "upcoming_matches": "#ffffff",
+                "stable_name": "#d4d8de",
                 "background": "#10141c",
             },
         },
         "slimfull": {
             "width": 1920,
-            "height": 36,
+            "height": 52,
             "show_current_score": True,
-            "show_upcoming_matches": False,
-            "upcoming_matches_count": 6,
+            "show_stable_name": True,
+            "show_upcoming_matches": True,
+            "upcoming_matches_count": 2,
             "opacity": 0.85,
             "text_opacity": 0.85,
-            "font_sizes": {
-                "text": 24,
-                "muted": 20,
-                "accent": 20,
-                "current_score": 24,
-                "result": 24,
-                "upcoming_matches": 24,
-            },
+            "font_sizes": copy.deepcopy(DEFAULT_SLIMFULL_FONT_SIZES),
             "border": copy.deepcopy(DEFAULT_SCOREBOARD_BORDER),
             **copy.deepcopy(DEFAULT_OVERLAY_STYLE),
             "colors": {
                 **copy.deepcopy(DEFAULT_OVERLAY_STYLE["colors"]),
                 "current_score": "#e8bd68",
                 "upcoming_matches": "#ffffff",
+                "stable_name": "#d4d8de",
                 "background": "#10141c",
             },
         },
@@ -561,6 +575,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             allowed_keys.update({"opacity", "text_opacity"})
         if key in ("scoreboard", "slimhalf", "slimfull"):
             allowed_keys.add("show_current_score")
+            allowed_keys.add("show_stable_name")
         if key == "upcomingmatches":
             allowed_keys.add("match_count")
         if key in ("slimhalf", "slimfull"):
@@ -596,6 +611,8 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         )
     for key in overlay_defaults:
         extra_colors = {"current_score": "#e8bd68"}
+        if key in ("scoreboard", "slimhalf", "slimfull"):
+            extra_colors["stable_name"] = "#d4d8de"
         if key in ("slimhalf", "slimfull"):
             extra_colors["upcoming_matches"] = "#ffffff"
         if key in BOX_OVERLAYS and "border" in overlay.get(key, {}).get("colors", {}):
@@ -611,8 +628,8 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         "control": DEFAULT_CONTROL_FONT_SIZES,
         "scoreboard": DEFAULT_SCOREBOARD_FONT_SIZES,
         "prematch": DEFAULT_PREMATCH_FONT_SIZES,
-        "slimhalf": DEFAULT_SLIM_SCOREBOARD_FONT_SIZES,
-        "slimfull": DEFAULT_SLIM_SCOREBOARD_FONT_SIZES,
+        "slimhalf": DEFAULT_SLIMHALF_FONT_SIZES,
+        "slimfull": DEFAULT_SLIMFULL_FONT_SIZES,
         "upcomingmatches": DEFAULT_SLIM_FONT_SIZES,
     }
     for key, defaults in font_size_defaults.items():
@@ -643,6 +660,10 @@ def validate_settings(raw: Any) -> dict[str, Any]:
         if not isinstance(overlay[key]["show_current_score"], bool):
             raise SettingsError(
                 f"overlay.{key}.show_current_score must be true or false"
+            )
+        if not isinstance(overlay[key]["show_stable_name"], bool):
+            raise SettingsError(
+                f"overlay.{key}.show_stable_name must be true or false"
             )
     for key in ("slimhalf", "slimfull"):
         if not isinstance(overlay[key]["show_upcoming_matches"], bool):

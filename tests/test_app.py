@@ -395,6 +395,10 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'mainOverlay.style.setProperty("--scoreboard-opacity", String(style.opacity));' in scoreboard_overlay.text
     assert 'mainOverlay.style.setProperty("--scoreboard-text-opacity", String(style.text_opacity));' in scoreboard_overlay.text
     assert "eastRecord.hidden = !settings.show_current_score;" in scoreboard_overlay.text
+    assert "settings.show_stable_name" in scoreboard_overlay.text
+    assert "state.stableNames" in scoreboard_overlay.text
+    assert "style.colors.stable_name" in scoreboard_overlay.text
+    assert "style.font_sizes.stable_name" in scoreboard_overlay.text
     main_styles = client.get("/static/overlay.css").text.split(
         ".pre-match-card {", maxsplit=1
     )[0]
@@ -422,6 +426,10 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'id="upcoming-matches"' in slimhalf_overlay.text
     assert "settings.show_upcoming_matches" in slimhalf_overlay.text
     assert "settings.upcoming_matches_count" in slimhalf_overlay.text
+    assert "settings.show_stable_name" in slimhalf_overlay.text
+    assert "state.stableNames" in slimhalf_overlay.text
+    assert "style.colors.stable_name" in slimhalf_overlay.text
+    assert "style.font_sizes.stable_name" in slimhalf_overlay.text
     assert "`On Deck: ${" in slimhalf_overlay.text
     assert 'upcoming.join(" | ")' in slimhalf_overlay.text
     assert "style.colors.upcoming_matches" in slimhalf_overlay.text
@@ -456,6 +464,15 @@ def test_pages_and_kanji_lookup_are_available():
     assert "var(--slim-text-opacity, 1)" in all_styles
     assert "var(--slim-upcoming-matches-color" in all_styles
     assert "var(--slim-upcoming-matches-font-size" in all_styles
+    assert "var(--slim-stable-name-color" in all_styles
+    assert "var(--slim-stable-name-font-size" in all_styles
+    assert "var(--scoreboard-stable-name-color" in all_styles
+    assert "var(--scoreboard-stable-name-font-size" in all_styles
+    main_stable_name_styles = all_styles.split(".main-stable-name {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "justify-self: center;" in main_stable_name_styles
+    assert "text-align: center;" in main_stable_name_styles
     assert 'class="configured-box slim-strip upcoming-strip"' in upcoming_overlay.text
     assert "state.upcomingMatches.slice(0, style.match_count).map(" in upcoming_overlay.text
     assert "matchups.join(\" - \")" in upcoming_overlay.text
@@ -761,6 +778,32 @@ def test_pre_match_state_includes_wrestler_profiles():
     assert "wrestlerProfiles" not in client.get("/api/state").json
 
 
+def test_scoreboard_state_includes_stable_names_when_enabled(tmp_path):
+    class StableNameSchedule(FakeSchedule):
+        def wrestler_stable_names(self, bout):
+            return {"east": "East Stable", "west": "West Stable"}
+
+    settings = default_settings()
+    settings["overlay"]["slimhalf"]["show_stable_name"] = False
+    settings["overlay"]["slimfull"]["show_stable_name"] = False
+    settings["overlay"]["scoreboard"]["show_stable_name"] = True
+    settings_path = tmp_path / "config.yaml"
+    write_config(settings_path, settings)
+    app = create_app(
+        schedule=StableNameSchedule([make_bout(1, 10, 11)]),
+        config_path=settings_path,
+        test_config={"TESTING": True},
+        watch_config=False,
+    )
+
+    state = app.test_client().get("/api/state").json
+
+    assert state["stableNames"] == {
+        "east": "East Stable",
+        "west": "West Stable",
+    }
+
+
 def test_pre_match_state_counts_division_bouts_and_sanyaku_transition():
     jonokuchi_1 = make_bout(1, 10, 11)
     jonokuchi_1 = Bout(
@@ -959,24 +1002,41 @@ def test_overlay_dimensions_are_positive_integers_and_reject_position_settings()
 def test_slim_scoreboard_defaults_and_independent_overrides():
     settings = default_settings()
     assert settings["overlay"]["slimhalf"]["width"] == 960
-    assert settings["overlay"]["slimhalf"]["height"] == 36
+    assert settings["overlay"]["slimhalf"]["height"] == 52
     assert settings["overlay"]["slimfull"]["width"] == 1920
-    assert settings["overlay"]["slimfull"]["height"] == 36
+    assert settings["overlay"]["slimfull"]["height"] == 52
     assert settings["overlay"]["slimhalf"]["show_upcoming_matches"] is False
-    assert settings["overlay"]["slimfull"]["show_upcoming_matches"] is False
-    assert settings["overlay"]["slimhalf"]["upcoming_matches_count"] == 6
-    assert settings["overlay"]["slimfull"]["upcoming_matches_count"] == 6
+    assert settings["overlay"]["slimfull"]["show_upcoming_matches"] is True
+    assert settings["overlay"]["scoreboard"]["show_stable_name"] is True
+    assert settings["overlay"]["slimhalf"]["show_stable_name"] is True
+    assert settings["overlay"]["slimfull"]["show_stable_name"] is True
+    assert settings["overlay"]["slimhalf"]["upcoming_matches_count"] == 2
+    assert settings["overlay"]["slimfull"]["upcoming_matches_count"] == 2
+    assert settings["overlay"]["slimhalf"]["opacity"] == 0.85
+    assert settings["overlay"]["slimhalf"]["text_opacity"] == 0.85
     assert settings["overlay"]["slimfull"]["opacity"] == 0.85
     assert settings["overlay"]["slimfull"]["text_opacity"] == 0.85
     assert settings["overlay"]["slimfull"]["font_sizes"] == {
-        "text": 24,
+        "text": 30,
         "muted": 20,
-        "accent": 20,
+        "accent": 22,
         "current_score": 24,
         "result": 24,
-        "upcoming_matches": 24,
+        "upcoming_matches": 22,
+        "stable_name": 20,
     }
-    assert settings["overlay"]["slimhalf"]["font_sizes"]["upcoming_matches"] == 18
+    assert settings["overlay"]["slimhalf"]["font_sizes"] == {
+        "text": 30,
+        "muted": 20,
+        "accent": 22,
+        "current_score": 24,
+        "result": 24,
+        "upcoming_matches": 22,
+        "stable_name": 20,
+    }
+    assert settings["overlay"]["slimhalf"]["colors"]["stable_name"] == "#d4d8de"
+    assert settings["overlay"]["slimfull"]["colors"]["stable_name"] == "#d4d8de"
+    assert settings["overlay"]["slimhalf"]["font_sizes"]["upcoming_matches"] == 22
     assert settings["overlay"]["slimhalf"]["colors"]["upcoming_matches"] == "#ffffff"
     assert settings["overlay"]["slimfull"]["colors"]["upcoming_matches"] == "#ffffff"
     assert settings["overlay"]["slimhalf"]["show_current_score"] is True
@@ -1001,6 +1061,8 @@ def test_slim_scoreboard_defaults_and_independent_overrides():
     settings["overlay"]["slimfull"]["colors"]["accent"] = "#123456"
     settings["overlay"]["slimhalf"]["font_sizes"]["upcoming_matches"] = 21
     settings["overlay"]["slimhalf"]["colors"]["upcoming_matches"] = "#abcdef"
+    settings["overlay"]["scoreboard"]["font_sizes"]["stable_name"] = 22
+    settings["overlay"]["scoreboard"]["colors"]["stable_name"] = "#123abc"
     validated = validate_settings(settings)
     assert validated["overlay"]["slimhalf"]["width"] == 600
     assert validated["overlay"]["slimhalf"]["opacity"] == 0.7
@@ -1009,6 +1071,21 @@ def test_slim_scoreboard_defaults_and_independent_overrides():
     assert validated["overlay"]["slimfull"]["colors"]["accent"] == "#123456"
     assert validated["overlay"]["slimhalf"]["font_sizes"]["upcoming_matches"] == 21
     assert validated["overlay"]["slimhalf"]["colors"]["upcoming_matches"] == "#abcdef"
+    assert validated["overlay"]["scoreboard"]["font_sizes"]["stable_name"] == 22
+    assert validated["overlay"]["scoreboard"]["colors"]["stable_name"] == "#123abc"
+
+
+@pytest.mark.parametrize("overlay_name", ["scoreboard", "slimhalf", "slimfull"])
+@pytest.mark.parametrize("value", ["true", 1, None])
+def test_show_stable_name_requires_boolean(overlay_name, value):
+    settings = default_settings()
+    settings["overlay"][overlay_name]["show_stable_name"] = value
+
+    with pytest.raises(
+        SettingsError,
+        match=f"overlay.{overlay_name}.show_stable_name must be true or false",
+    ):
+        validate_settings(settings)
 
 
 @pytest.mark.parametrize(
@@ -1063,8 +1140,8 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     }
     assert settings["overlay"]["scoreboard"]["width"] == 993
     assert settings["overlay"]["scoreboard"]["height"] == 158
-    assert settings["overlay"]["scoreboard"]["opacity"] == 1
-    assert settings["overlay"]["scoreboard"]["text_opacity"] == 1
+    assert settings["overlay"]["scoreboard"]["opacity"] == 0.85
+    assert settings["overlay"]["scoreboard"]["text_opacity"] == 0.85
     assert settings["overlay"]["prematch"]["text_opacity"] == 1
     assert settings["overlay"]["scoreboard"]["font_sizes"] == {
         "text": 45,
@@ -1072,7 +1149,9 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
         "accent": 46,
         "current_score": 36,
         "result": 40,
+        "stable_name": 22,
     }
+    assert settings["overlay"]["scoreboard"]["colors"]["stable_name"] == "#d4d8de"
     assert settings["overlay"]["prematch"]["font_sizes"] == {
         "text": 80,
         "muted": 36,
@@ -1093,6 +1172,8 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     settings["overlay"]["prematch"]["font_sizes"]["muted"] = 32
     settings["overlay"]["prematch"]["font_sizes"]["current_score"] = 42
     settings["overlay"]["prematch"]["colors"]["current_score"] = "#abcdef"
+    settings["overlay"]["slimfull"]["font_sizes"]["stable_name"] = 19
+    settings["overlay"]["slimfull"]["colors"]["stable_name"] = "#abcdef"
     validated = validate_settings(settings)
     assert validated["overlay"]["scoreboard"]["font_sizes"]["text"] == 48.5
     assert validated["overlay"]["scoreboard"]["font_sizes"]["current_score"] == 32
@@ -1106,6 +1187,8 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
     assert validated["overlay"]["prematch"]["font_sizes"]["muted"] == 32
     assert validated["overlay"]["prematch"]["font_sizes"]["current_score"] == 42
     assert validated["overlay"]["prematch"]["colors"]["current_score"] == "#abcdef"
+    assert validated["overlay"]["slimfull"]["font_sizes"]["stable_name"] == 19
+    assert validated["overlay"]["slimfull"]["colors"]["stable_name"] == "#abcdef"
 
 
 @pytest.mark.parametrize(
