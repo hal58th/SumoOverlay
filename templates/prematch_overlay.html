@@ -227,9 +227,10 @@
     function weightText(weightKg) {
       if (typeof weightKg !== "number" || weightKg <= 0) return null;
       const pounds = Math.round(weightKg * 2.2046226218);
+      const kilograms = prematchV2 ? Math.trunc(weightKg) : weightKg;
       return prematchV2
-        ? `${weightKg} kg / ${pounds} lb`
-        : `Weight: ${weightKg} kg (${pounds} lb)`;
+        ? `${kilograms} kg / ${pounds} lb`
+        : `Weight: ${kilograms} kg (${pounds} lb)`;
     }
 
     function renderWrestlerProfile(side, profile, state, comparisons) {
