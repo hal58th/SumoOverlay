@@ -117,7 +117,7 @@
           .slice(0, settings.upcoming_matches_count)
           .map(match => `${match.east} vs ${match.west}`);
         upcomingMatches.textContent = `On Deck: ${
-          upcoming.length ? upcoming.join(" | ") : "No upcoming matches"
+          upcoming.length ? upcoming.join(" | ") : "Musubi-no-ichiban (last match)"
         }`;
       }
       if ("{{ layout }}" === "slimfull") {

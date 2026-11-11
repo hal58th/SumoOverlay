@@ -508,7 +508,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert "text-align: center;" in main_stable_name_styles
     assert 'class="configured-box slim-strip upcoming-strip"' in upcoming_overlay.text
     assert "state.upcomingMatches.slice(0, style.match_count).map(" in upcoming_overlay.text
-    assert "matchups.join(\" - \")" in upcoming_overlay.text
+    assert "matchups.join(\" | \")" in upcoming_overlay.text
     assert "state.upcomingMatches.slice(0, style.match_count)" in upcoming_overlay.text
     assert '"Musubi-no-ichiban (last match)"' in upcoming_overlay.text
     assert 'state.settings.overlay.upcomingmatches' in upcoming_overlay.text
