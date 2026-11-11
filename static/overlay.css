@@ -171,6 +171,8 @@ body {
 
 .upcoming-line {
   display: flex;
+  width: 100%;
+  min-width: 0;
   gap: .35em;
   overflow: hidden;
   font-size: var(--overlay-text-font-size);
@@ -184,10 +186,39 @@ body {
   color: var(--overlay-accent-color);
 }
 
-#upcoming-matchups {
+.upcoming-matchups-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
+}
+
+.upcoming-matchups-track {
+  display: inline-flex;
+  width: max-content;
   color: var(--overlay-text-color);
-  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: transform var(--upcoming-swipe-duration, 1200ms) ease-in-out;
+  will-change: transform;
+}
+
+.upcoming-matchup {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: baseline;
+}
+
+.upcoming-matchup-separator {
+  white-space: pre;
+  flex-shrink: 0;
+}
+
+#upcoming-matchups.no-transition {
+  transition: none;
+}
+
+#upcoming-matchups {
+  transform: translateX(0);
 }
 
 .slimfull .slim-main-line {

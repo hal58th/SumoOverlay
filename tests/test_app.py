@@ -141,6 +141,7 @@ def test_upcoming_matches_state_tracks_the_configured_number_of_bouts():
 def test_upcoming_match_count_is_configurable_in_settings(tmp_path):
     settings = default_settings()
     settings["overlay"]["upcomingmatches"]["match_count"] = 3
+    settings["overlay"]["upcomingmatches"]["swipe_duration_ms"] = 900
     settings["overlay"]["slimhalf"]["show_upcoming_matches"] = True
     settings["overlay"]["slimhalf"]["upcoming_matches_count"] = 8
     settings_path = tmp_path / "config.yaml"
@@ -158,6 +159,7 @@ def test_upcoming_match_count_is_configurable_in_settings(tmp_path):
     state = app.test_client().get("/api/state").json
     assert len(state["upcomingMatches"]) == 8
     assert state["settings"]["overlay"]["upcomingmatches"]["match_count"] == 3
+    assert state["settings"]["overlay"]["upcomingmatches"]["swipe_duration_ms"] == 900
     assert state["settings"]["overlay"]["slimhalf"]["upcoming_matches_count"] == 8
 
 
@@ -513,7 +515,17 @@ def test_pages_and_kanji_lookup_are_available():
     assert '"Musubi-no-ichiban (last match)"' in upcoming_overlay.text
     assert 'state.settings.overlay.upcomingmatches' in upcoming_overlay.text
     assert 'class="upcoming-label">On Deck:</span>' in upcoming_overlay.text
+    assert 'class="upcoming-matchups-track"' in upcoming_overlay.text
+    assert "state.index > previousBoutIndex" in upcoming_overlay.text
+    assert "style.swipe_duration_ms" in upcoming_overlay.text
+    assert "item.getBoundingClientRect().width" in upcoming_overlay.text
     assert ".upcoming-label" in all_styles
+    assert "@media (prefers-reduced-motion: reduce)" not in all_styles
+    upcoming_line_styles = all_styles.split(".upcoming-line {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "width: 100%;" in upcoming_line_styles
+    assert "min-width: 0;" in upcoming_line_styles
     assert "color: var(--overlay-accent-color);" in all_styles
     assert "clamp(" not in all_styles
     assert "vw" not in all_styles
@@ -1077,6 +1089,7 @@ def test_slim_scoreboard_defaults_and_independent_overrides():
     assert settings["overlay"]["upcomingmatches"]["width"] == 1920
     assert settings["overlay"]["upcomingmatches"]["height"] == 36
     assert settings["overlay"]["upcomingmatches"]["match_count"] == 6
+    assert settings["overlay"]["upcomingmatches"]["swipe_duration_ms"] == 1200
     assert settings["overlay"]["upcomingmatches"]["opacity"] == 0.85
     assert settings["overlay"]["upcomingmatches"]["text_opacity"] == 0.85
     assert settings["overlay"]["upcomingmatches"]["font_sizes"] == {
@@ -1126,6 +1139,9 @@ def test_show_stable_name_requires_boolean(overlay_name, value):
     [
         ("upcomingmatches", "match_count", 0, "match_count"),
         ("upcomingmatches", "match_count", True, "match_count"),
+        ("upcomingmatches", "swipe_duration_ms", 0, "swipe_duration_ms"),
+        ("upcomingmatches", "swipe_duration_ms", True, "swipe_duration_ms"),
+        ("upcomingmatches", "swipe_duration_ms", 1.5, "swipe_duration_ms"),
         ("slimhalf", "upcoming_matches_count", 0, "upcoming_matches_count"),
         ("slimfull", "upcoming_matches_count", 1.5, "upcoming_matches_count"),
         ("slimhalf", "show_upcoming_matches", "false", "show_upcoming_matches"),
