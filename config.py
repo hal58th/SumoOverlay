@@ -232,6 +232,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
             "width": 1920,
             "height": 36,
             "match_count": 6,
+            "swipe_duration_ms": 1200,
             "opacity": 0.85,
             "text_opacity": 0.85,
             "font_sizes": {
@@ -592,7 +593,7 @@ def validate_settings(raw: Any) -> dict[str, Any]:
             allowed_keys.add("show_current_score")
             allowed_keys.add("show_stable_name")
         if key == "upcomingmatches":
-            allowed_keys.add("match_count")
+            allowed_keys.update({"match_count", "swipe_duration_ms"})
         if key in ("slimhalf", "slimfull"):
             allowed_keys.update({"show_upcoming_matches", "upcoming_matches_count"})
         unknown_keys = set(section) - allowed_keys
@@ -699,6 +700,15 @@ def validate_settings(raw: Any) -> dict[str, Any]:
     ):
         raise SettingsError(
             "overlay.upcomingmatches.match_count must be an integer of 1 or greater"
+        )
+    upcoming_swipe_duration = overlay["upcomingmatches"]["swipe_duration_ms"]
+    if (
+        isinstance(upcoming_swipe_duration, bool)
+        or not isinstance(upcoming_swipe_duration, int)
+        or upcoming_swipe_duration < 1
+    ):
+        raise SettingsError(
+            "overlay.upcomingmatches.swipe_duration_ms must be an integer of 1 or greater"
         )
     settings["overlay"] = overlay
 

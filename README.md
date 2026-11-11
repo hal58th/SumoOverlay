@@ -143,6 +143,7 @@ Open `config.yaml` in a text editor and change the values you need. Keep the ind
 | `overlay.slimfull.width`, `overlay.slimfull.height` | Fixed pixel size of the full-width slim scoreboard. Defaults to 1920 by 36. |
 | `overlay.upcomingmatches.width`, `overlay.upcomingmatches.height` | Fixed pixel size of the upcoming matches overlay. Defaults to 1920 by 36. |
 | `overlay.upcomingmatches.match_count` | Number of upcoming matchups to display. Defaults to `6`. |
+| `overlay.upcomingmatches.swipe_duration_ms` | Duration of the leftward matchup swipe when the selected bout advances, in milliseconds. Defaults to `1200`. |
 | `overlay.scoreboard.show_current_score`, `overlay.slimhalf.show_current_score`, `overlay.slimfull.show_current_score` | Whether each scoreboard shows wrestler current scores. Defaults to `true`. |
 | `overlay.scoreboard.show_stable_name`, `overlay.slimhalf.show_stable_name`, `overlay.slimfull.show_stable_name` | Whether to show each wrestler's stable name. Main scoreboard defaults to `false`; slimhalf and slimfull default to `true`. |
 | `overlay.scoreboard.font_sizes.stable_name`, `overlay.slimhalf.font_sizes.stable_name`, `overlay.slimfull.font_sizes.stable_name` | Font size in pixels for stable names. Defaults to `18`, `14`, and `16`, respectively. |

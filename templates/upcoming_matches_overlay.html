@@ -4,19 +4,116 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>On Deck Sumo Matches</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=15) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=19) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
   <main id="upcoming-overlay" class="configured-box slim-strip upcoming-strip" hidden aria-live="polite">
     <div class="upcoming-line">
       <span class="upcoming-label">On Deck:</span>
-      <span id="upcoming-matchups"></span>
+      <span class="upcoming-matchups-viewport">
+        <span id="upcoming-matchups" class="upcoming-matchups-track"></span>
+      </span>
     </div>
   </main>
   <script>
     const upcomingOverlay = document.getElementById("upcoming-overlay");
     const upcomingMatchups = document.getElementById("upcoming-matchups");
+    let previousBoutIndex = null;
+    let swipeActive = false;
+    let swipeTimer = null;
+    let swipeTransitionEnd = null;
+    let displayedMatchups = [];
+    let pendingMatchups = null;
+
+    function finishSwipe() {
+      if (!swipeActive) return;
+      swipeActive = false;
+      if (swipeTimer !== null) {
+        window.clearTimeout(swipeTimer);
+        swipeTimer = null;
+      }
+      if (swipeTransitionEnd) {
+        upcomingMatchups.removeEventListener("transitionend", swipeTransitionEnd);
+        swipeTransitionEnd = null;
+      }
+      upcomingMatchups.classList.add("no-transition");
+      renderMatchups(pendingMatchups);
+      pendingMatchups = null;
+      upcomingMatchups.style.transform = "translateX(0)";
+      void upcomingMatchups.offsetWidth;
+      upcomingMatchups.classList.remove("no-transition");
+    }
+
+    function renderMatchups(matchups, message = null) {
+      upcomingMatchups.replaceChildren();
+      displayedMatchups = matchups;
+      if (message !== null) {
+        upcomingMatchups.textContent = message;
+        return;
+      }
+      matchups.forEach((matchup, index) => {
+        const item = document.createElement("span");
+        item.className = "upcoming-matchup";
+        item.textContent = matchup;
+        if (index < matchups.length - 1) {
+          const separator = document.createElement("span");
+          separator.className = "upcoming-matchup-separator";
+          separator.textContent = " | ";
+          item.append(separator);
+        }
+        upcomingMatchups.append(item);
+      });
+    }
+
+    function setMatchups(matchups, message, shouldSwipe, duration, shiftCount) {
+      if (swipeActive) finishSwipe();
+      const overlapCount = displayedMatchups.length - shiftCount;
+      const canSwipe = (
+        shouldSwipe
+        && message === null
+        && shiftCount > 0
+        && overlapCount > 0
+        && matchups.length >= overlapCount
+        && displayedMatchups.slice(shiftCount).every(
+          (matchup, index) => matchup === matchups[index]
+        )
+      );
+      if (!canSwipe) {
+        renderMatchups(matchups, message);
+        return;
+      }
+
+      upcomingOverlay.style.setProperty("--upcoming-swipe-duration", `${duration}ms`);
+      const lastItem = upcomingMatchups.lastElementChild;
+      if (lastItem && matchups.length > displayedMatchups.length) {
+        const separator = document.createElement("span");
+        separator.className = "upcoming-matchup-separator";
+        separator.textContent = " | ";
+        lastItem.append(separator);
+        for (const matchup of matchups.slice(overlapCount)) {
+          const item = document.createElement("span");
+          item.className = "upcoming-matchup";
+          item.textContent = matchup;
+          upcomingMatchups.append(item);
+        }
+      }
+
+      const outgoingItems = [...upcomingMatchups.children].slice(0, shiftCount);
+      const distance = outgoingItems.reduce(
+        (total, item) => total + item.getBoundingClientRect().width,
+        0
+      );
+      pendingMatchups = matchups;
+      swipeActive = true;
+      swipeTransitionEnd = event => {
+        if (event.propertyName === "transform") finishSwipe();
+      };
+      upcomingMatchups.addEventListener("transitionend", swipeTransitionEnd);
+      void upcomingMatchups.offsetWidth;
+      upcomingMatchups.style.transform = `translateX(-${distance}px)`;
+      swipeTimer = window.setTimeout(finishSwipe, duration + 100);
+    }
 
     function renderUpcoming(state) {
       if (!state.settings || !state.settings.overlay) return;
@@ -24,6 +121,16 @@
         console.error("Bout state is missing upcoming matches");
         return;
       }
+      const currentBoutIndex = Number.isInteger(state.index) ? state.index : null;
+      const shouldSwipe = (
+        previousBoutIndex !== null
+        && currentBoutIndex !== null
+        && state.index > previousBoutIndex
+      );
+      const shiftCount = shouldSwipe
+        ? Math.min(currentBoutIndex - previousBoutIndex, displayedMatchups.length)
+        : 0;
+      if (currentBoutIndex !== null) previousBoutIndex = currentBoutIndex;
       const style = state.settings.overlay.upcomingmatches;
       const root = document.documentElement;
       root.style.setProperty("--overlay-font-family", style.font_family);
@@ -45,11 +152,12 @@
       const matchups = state.upcomingMatches.slice(0, style.match_count).map(
         match => `${match.east} vs ${match.west}`
       );
-      upcomingMatchups.textContent = state.isLastMatchOfDay
+      const message = state.isLastMatchOfDay
         ? "Musubi-no-ichiban (last match)"
         : matchups.length
-          ? matchups.join(" | ")
+          ? null
           : "No upcoming matches";
+      setMatchups(matchups, message, shouldSwipe, style.swipe_duration_ms, shiftCount);
       upcomingOverlay.hidden = false;
     }
 
