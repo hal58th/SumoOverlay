@@ -325,6 +325,9 @@ class SumoApiClient:
     def fetch_rikishi(self, rikishi_id: int) -> dict[str, Any]:
         return self._get_json(f"{self.base_url}/rikishi/{rikishi_id}")
 
+    def fetch_rikishi_stats(self, rikishi_id: int) -> dict[str, Any]:
+        return self._get_json(f"{self.base_url}/rikishi/{rikishi_id}/stats")
+
     def fetch_rikishi_matches(self, rikishi_id: int) -> list[dict[str, Any]]:
         payload = self._get_json(f"{self.base_url}/rikishi/{rikishi_id}/matches")
         total = payload.get("total")
@@ -393,6 +396,9 @@ class BashoSchedule:
         self._rikishi_cache: dict[int, dict[str, Any]] = {}
         self._rikishi_cache_lock = Lock()
         self._rikishi_locks: dict[int, Lock] = {}
+        self._rikishi_stats_cache: dict[int, dict[str, Any]] = {}
+        self._rikishi_stats_cache_lock = Lock()
+        self._rikishi_stats_locks: dict[int, Lock] = {}
         self._career_matches_cache: dict[int, list[dict[str, Any]]] = {}
         self._prior_days = [
             self._fetch_day(current_day)
@@ -491,6 +497,20 @@ class BashoSchedule:
                 self._rikishi_cache[rikishi_id] = profile
             return profile
 
+    def _fetch_rikishi_stats(self, rikishi_id: int) -> dict[str, Any]:
+        with self._rikishi_stats_cache_lock:
+            if rikishi_id in self._rikishi_stats_cache:
+                return self._rikishi_stats_cache[rikishi_id]
+            stats_lock = self._rikishi_stats_locks.setdefault(rikishi_id, Lock())
+        with stats_lock:
+            with self._rikishi_stats_cache_lock:
+                if rikishi_id in self._rikishi_stats_cache:
+                    return self._rikishi_stats_cache[rikishi_id]
+            stats = self.client.fetch_rikishi_stats(rikishi_id)
+            with self._rikishi_stats_cache_lock:
+                self._rikishi_stats_cache[rikishi_id] = stats
+            return stats
+
     def wrestler_stable_names(self, bout: Bout) -> dict[str, str | None]:
         """Return the stable names for both participants without loading career history."""
         stable_names: dict[str, str | None] = {}
@@ -531,6 +551,8 @@ class BashoSchedule:
                 "debut": text_field("debut"),
                 "highestRank": highest_rank or text_field("currentRank") or participant.rank,
                 "lifetime": self._lifetime_record(participant.rikishi_id, bout),
+                "kinboshi": self._kinboshi_count(participant.rikishi_id),
+                "titles": self._titles_count(participant.rikishi_id),
             }
         return profiles
 
@@ -555,6 +577,51 @@ class BashoSchedule:
                 if key is not None and (highest is None or key > highest[0]):
                     highest = (key, rank.strip())
         return highest[1] if highest else None
+
+    def _kinboshi_count(self, rikishi_id: int) -> int:
+        target = (self.basho_id, self.day)
+        count = 0
+        for match in self._career_matches(rikishi_id):
+            if _basho_day_key(match, "rikishi match history") >= target:
+                continue
+            winner_id = match.get("winnerId")
+            if winner_id is None or winner_id == 0:
+                continue
+            winner_id = _required_int(winner_id, "rikishi match winner ID")
+            if winner_id != rikishi_id:
+                continue
+            east_id = _required_int(match.get("eastId"), "rikishi match east ID")
+            west_id = _required_int(match.get("westId"), "rikishi match west ID")
+            if winner_id not in (east_id, west_id):
+                raise SumoApiError(
+                    "sumo-api.com rikishi match winner is not a match participant"
+                )
+            winner_side = "east" if winner_id == east_id else "west"
+            opponent_side = "west" if winner_side == "east" else "east"
+            winner_rank = match.get(f"{winner_side}Rank")
+            opponent_rank = match.get(f"{opponent_side}Rank")
+            if (
+                isinstance(winner_rank, str)
+                and winner_rank.startswith("Maegashira ")
+                and isinstance(opponent_rank, str)
+                and opponent_rank.startswith("Yokozuna ")
+            ):
+                count += 1
+        return count
+
+    def _titles_count(self, rikishi_id: int) -> int:
+        fetch_stats = getattr(self.client, "fetch_rikishi_stats", None)
+        if not callable(fetch_stats):
+            return 0
+        stats = self._fetch_rikishi_stats(rikishi_id)
+        titles = stats.get("yushoByDivision")
+        if isinstance(titles, dict):
+            titles = titles.get("Makuuchi", 0)
+        elif titles is None:
+            titles = stats.get("yusho", 0)
+        if isinstance(titles, bool) or not isinstance(titles, int) or titles < 0:
+            raise SumoApiError("sumo-api.com returned an invalid rikishi title count")
+        return titles
 
     def _lifetime_record(self, rikishi_id: int, bout: Bout) -> dict[str, int]:
         target = (self.basho_id, self.day)

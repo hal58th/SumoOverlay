@@ -395,10 +395,36 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'measurementsLine.append(document.createTextNode(`${label} `));' in prematch_v2_overlay.text
     assert 'line(prematchV2 ? "Stable" : "Stable (heya)", content.heya);' in prematch_v2_overlay.text
     assert 'line(prematchV2 ? "Birthplace" : "Place of origin (shusshin)", content.shusshin);' in prematch_v2_overlay.text
-    assert "font-size: calc(var(--overlay-muted-font-size) + 4px);" in client.get("/static/overlay.css").text
-    assert ".prematch-v2 .rank-record > :last-child" in client.get("/static/overlay.css").text
-    assert "font-size: calc(var(--overlay-current-score-font-size) + 4px);" in client.get("/static/overlay.css").text
-    assert ".prematch-v2 .prematch-v2-versus" in client.get("/static/overlay.css").text
+    assert 'id="east-honors" class="wrestler-honors" hidden' in prematch_v2_overlay.text
+    assert 'id="west-honors" class="wrestler-honors" hidden' in prematch_v2_overlay.text
+    assert 'const kinboshiIconUrl = "/static/kinboshi.svg";' in prematch_v2_overlay.text
+    assert 'const emperorsCupIconUrl = "/static/emperors_cup.svg";' in prematch_v2_overlay.text
+    assert 'Number.isInteger(honor.value) && honor.value > 0' in prematch_v2_overlay.text
+    assert 'Array.from({ length: honor.value }' in prematch_v2_overlay.text
+    assert (
+        prematch_v2_overlay.text.index('{ key: "titles"')
+        < prematch_v2_overlay.text.index('{ key: "kinboshi"')
+    )
+    assert 'syncWrestlerHonorsHeights();' in prematch_v2_overlay.text
+    east_record_index = prematch_v2_overlay.text.index('id="east-record"')
+    east_honors_index = prematch_v2_overlay.text.index('id="east-honors"')
+    assert east_record_index < east_honors_index
+    west_record_index = prematch_v2_overlay.text.index('id="west-record"')
+    west_honors_index = prematch_v2_overlay.text.index('id="west-honors"')
+    assert west_record_index < west_honors_index
+    all_styles = client.get("/static/overlay.css").text
+    assert ".wrestler-honors" in all_styles
+    assert ".wrestler-honor-icon" in all_styles
+    assert ".wrestler-honor-count" not in all_styles
+    assert "min-height: 0.88em;" in all_styles
+    kinboshi_svg = client.get("/static/kinboshi.svg")
+    assert kinboshi_svg.status_code == 200
+    assert "<circle" not in kinboshi_svg.text
+    assert client.get("/static/emperors_cup.svg").status_code == 200
+    assert "font-size: calc(var(--overlay-muted-font-size) + 4px);" in all_styles
+    assert ".prematch-v2 .rank-record > :last-child" in all_styles
+    assert "font-size: calc(var(--overlay-current-score-font-size) + 4px);" in all_styles
+    assert ".prematch-v2 .prematch-v2-versus" in all_styles
     assert client.get("/scoreboard/v2").status_code == 404
     slimhalf_overlay = client.get("/scoreboard/slimhalf")
     assert slimhalf_overlay.status_code == 200

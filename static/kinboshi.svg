@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="11.2 9.25 41.5 41.5" role="img" aria-label="Kinboshi">
+  <defs>
+    <linearGradient id="kinboshi-gold" x1="0" y1="0" x2=".85" y2="1">
+      <stop offset="0" stop-color="#fff0a6"/>
+      <stop offset=".45" stop-color="#e8bd68"/>
+      <stop offset="1" stop-color="#a9791f"/>
+    </linearGradient>
+  </defs>
+  <polygon points="32,11 36.94,25.2 51.97,25.51 39.99,34.6 44.34,48.99 32,40.4 19.66,48.99 24.01,34.6 12.03,25.51 27.06,25.2"
+           fill="url(#kinboshi-gold)" stroke="#7a5a10" stroke-width="1.4" stroke-linejoin="round"/>
+  <path d="M32 13.2 35.4 23.7 32 30.8 28.6 23.7Z" fill="#fff" opacity=".16"/>
+</svg>
