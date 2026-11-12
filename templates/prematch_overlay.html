@@ -322,6 +322,9 @@
           );
         }
       }
+      if (prematchV2 && (content.previousRank || content.firstBasho)) {
+        line("Previous rank", content.previousRank || "First Basho");
+      }
       if (content.highestRank) {
         const currentRank = state[side] && state[side].rank;
         const highestRankKey = rankComparisonKey(content.highestRank);
