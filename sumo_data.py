@@ -542,6 +542,7 @@ class BashoSchedule:
                 return value
 
             highest_rank = self._highest_rank(participant.rikishi_id)
+            previous_rank, first_basho = self._previous_rank(participant.rikishi_id)
             profiles[side] = {
                 "birthDate": text_field("birthDate"),
                 "heya": text_field("heya"),
@@ -549,6 +550,8 @@ class BashoSchedule:
                 "weight": measurement_field("weight"),
                 "shusshin": text_field("shusshin"),
                 "debut": text_field("debut"),
+                "previousRank": previous_rank,
+                "firstBasho": first_basho,
                 "highestRank": highest_rank or text_field("currentRank") or participant.rank,
                 "lifetime": self._lifetime_record(participant.rikishi_id, bout),
                 "kinboshi": self._kinboshi_count(participant.rikishi_id),
@@ -577,6 +580,33 @@ class BashoSchedule:
                 if key is not None and (highest is None or key > highest[0]):
                     highest = (key, rank.strip())
         return highest[1] if highest else None
+
+    def _previous_rank(self, rikishi_id: int) -> tuple[str | None, bool]:
+        """Return the rank from the wrestler's last completed basho, plus a debut flag."""
+        prior_basho: str | None = None
+        ranks: dict[str, tuple[int, str]] = {}
+        for match in self._career_matches(rikishi_id):
+            basho_id, day = _basho_day_key(match, "rikishi match history")
+            if basho_id >= self.basho_id:
+                continue
+            if prior_basho is None or basho_id > prior_basho:
+                prior_basho = basho_id
+            for side in ("east", "west"):
+                match_rikishi_id = _required_int(
+                    match.get(f"{side}Id"), f"rikishi match {side} ID"
+                )
+                if match_rikishi_id != rikishi_id:
+                    continue
+                rank = match.get(f"{side}Rank")
+                if not isinstance(rank, str) or not rank.strip():
+                    continue
+                earliest = ranks.get(basho_id)
+                if earliest is None or day < earliest[0]:
+                    ranks[basho_id] = (day, rank.strip())
+        if prior_basho is None:
+            return None, True
+        rank_entry = ranks.get(prior_basho)
+        return (rank_entry[1] if rank_entry else None), False
 
     def _kinboshi_count(self, rikishi_id: int) -> int:
         target = (self.basho_id, self.day)

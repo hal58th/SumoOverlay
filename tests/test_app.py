@@ -568,6 +568,11 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'id="bouts-until-next-stage"' not in pre_match_html
     assert "Bout ${state.divisionBoutNumber} out of ${state.divisionTotal}" in pre_match_html
     assert "state.boutsUntilNextStage" not in pre_match_html
+    assert 'line("Previous rank", content.previousRank || "First Basho")' in pre_match_html
+    assert '"First Basho"' in pre_match_html
+    assert pre_match_html.index('content.previousRank') < pre_match_html.index(
+        '"Highest rank"'
+    )
     assert '"Highest rank"' in pre_match_html
     assert "highestRankKey === rankComparisonKey(currentRank)" in pre_match_html
     assert '? "Head to Head: First Meeting"' in pre_match_html
