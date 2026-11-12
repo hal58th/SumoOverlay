@@ -408,10 +408,38 @@ body {
 
 .rank-record {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: flex-start;
-  gap: 22px;
+  gap: 6px 22px;
   margin-top: 12px;
+}
+
+.wrestler-honors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
+  justify-content: flex-start;
+  gap: 0.16em 0.12em;
+  min-height: 0.88em;
+  margin-top: 10px;
+  color: var(--overlay-accent-color);
+  font-size: calc(var(--prematch-profile-font-size) * 0.9);
+  font-weight: 800;
+  line-height: 1;
+  white-space: normal;
+}
+
+.wrestler-honors[hidden] {
+  display: none;
+}
+
+.wrestler-honor-icon {
+  width: 0.88em;
+  height: 0.88em;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
 .west .rank-record {

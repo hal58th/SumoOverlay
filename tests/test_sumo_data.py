@@ -315,6 +315,7 @@ def test_schedule_returns_cached_broadcast_profile_details():
     class FakeClient:
         def __init__(self):
             self.profile_calls = []
+            self.stats_calls = []
             self.career_calls = []
 
         def fetch_torikumi(self, basho_id, division, day):
@@ -332,6 +333,10 @@ def test_schedule_returns_cached_broadcast_profile_details():
                 "currentRank": "Maegashira 4 East",
                 "unrelated": "not exposed",
             }
+
+        def fetch_rikishi_stats(self, rikishi_id):
+            self.stats_calls.append(rikishi_id)
+            return {"yushoByDivision": {"Makuuchi": 2, "Juryo": 1}}
 
         def fetch_rikishi_matches(self, rikishi_id):
             self.career_calls.append(rikishi_id)
@@ -375,6 +380,8 @@ def test_schedule_returns_cached_broadcast_profile_details():
             "debut": "202305",
             "highestRank": "Sekiwake 1 West",
             "lifetime": {"wins": 0, "losses": 0, "matches": 0},
+            "kinboshi": 0,
+            "titles": 2,
         },
         "west": {
             "birthDate": "2000-06-07T00:00:00Z",
@@ -385,10 +392,13 @@ def test_schedule_returns_cached_broadcast_profile_details():
             "debut": "202305",
             "highestRank": "Ozeki 1 East",
             "lifetime": {"wins": 0, "losses": 0, "matches": 0},
+            "kinboshi": 0,
+            "titles": 2,
         },
     }
     schedule.wrestler_profiles(bout)
     assert client.profile_calls == [1, 2]
+    assert client.stats_calls == [1, 2]
     assert client.career_calls == [1, 2]
     assert schedule.wrestler_stable_names(bout) == {
         "east": "Nishonoseki",
@@ -434,6 +444,57 @@ def test_lifetime_records_include_only_completed_matches_before_selected_bout():
 
     assert profiles["east"]["lifetime"] == {"wins": 1, "losses": 1, "matches": 2}
     assert profiles["west"]["lifetime"] == {"wins": 0, "losses": 2, "matches": 2}
+
+
+def test_profiles_count_kinboshi_and_makuuchi_titles():
+    def career_match(basho_id, east_rank, west_rank, winner_id):
+        return {
+            "bashoId": basho_id,
+            "division": "Makuuchi",
+            "day": 1,
+            "matchNo": 1,
+            "eastId": 1,
+            "eastRank": east_rank,
+            "westId": 2,
+            "westRank": west_rank,
+            "winnerId": winner_id,
+        }
+
+    class FakeClient:
+        def __init__(self):
+            self.stats_calls = []
+
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(3, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            return {"shikonaJp": f"力士{rikishi_id}", "shikonaEn": f"Rikishi{rikishi_id}"}
+
+        def fetch_rikishi_stats(self, rikishi_id):
+            self.stats_calls.append(rikishi_id)
+            return {"yusho": 5, "yushoByDivision": {"Makuuchi": 3, "Juryo": 2}}
+
+        def fetch_rikishi_matches(self, rikishi_id):
+            return [
+                career_match("202401", "Maegashira 5 East", "Yokozuna 1 West", 1),
+                career_match("202403", "Maegashira 5 East", "Yokozuna 1 West", 2),
+                career_match("202405", "Maegashira 5 East", "Ozeki 1 West", 1),
+                career_match("202506", "Maegashira 5 East", "Yokozuna 1 West", 1),
+            ]
+
+    client = FakeClient()
+    schedule = BashoSchedule(client, "202505", "Makuuchi", 1)
+    bout = schedule.bouts[0]
+
+    profiles = schedule.wrestler_profiles(bout)
+    assert profiles["east"]["kinboshi"] == 1
+    assert profiles["east"]["titles"] == 3
+    assert profiles["west"]["kinboshi"] == 0
+    assert profiles["west"]["titles"] == 3
+    assert client.stats_calls == [1, 2]
+
+    schedule.wrestler_profiles(bout)
+    assert client.stats_calls == [1, 2]
 
 
 def test_cached_sumo_api_snapshot_supports_all_divisions_and_safe_h2h(sumo_api_client):
@@ -621,6 +682,28 @@ def test_live_api_client_targets_documented_h2h_route():
 
     assert client.fetch_head_to_head(19, 8850) == []
     assert session.url.endswith("/rikishi/19/matches/8850")
+
+
+def test_live_api_client_targets_documented_rikishi_stats_route():
+    class CapturedResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"yusho": 2}
+
+    class CapturingSession:
+        url = None
+
+        def get(self, url, timeout):
+            self.url = url
+            return CapturedResponse()
+
+    session = CapturingSession()
+    client = SumoApiClient(session=session)
+
+    assert client.fetch_rikishi_stats(19) == {"yusho": 2}
+    assert session.url.endswith("/rikishi/19/stats")
 
 
 def test_live_api_client_fetches_complete_rikishi_match_history():

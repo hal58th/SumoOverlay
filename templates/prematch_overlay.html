@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ "Sumo Pre-Match Overlay v2" if prematch_v2|default(false) else "Sumo Pre-Match Overlay" }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=16) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=18) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="{{ url_for('static', filename='name-fitting.js', v=5) }}"></script>
 </head>
@@ -22,6 +22,7 @@
           <div id="east-rank" class="rank"></div>
           <div id="east-record" class="record"></div>
         </div>
+        <div id="east-honors" class="wrestler-honors" hidden></div>
         <div id="east-profile" class="wrestler-profile"></div>
       </section>
       <div class="versus{% if prematch_v2|default(false) %} prematch-v2-versus{% endif %}"{% if prematch_v2|default(false) %} aria-hidden="true"{% endif %}>VS</div>
@@ -31,6 +32,7 @@
           <div id="west-rank" class="rank"></div>
           <div id="west-record" class="record"></div>
         </div>
+        <div id="west-honors" class="wrestler-honors" hidden></div>
         <div id="west-profile" class="wrestler-profile"></div>
       </section>
     </div>
@@ -42,6 +44,8 @@
   </main>
   <script>
     const prematchV2 = {{ prematch_v2|default(false)|tojson }};
+    const kinboshiIconUrl = "{{ url_for('static', filename='kinboshi.svg') }}";
+    const emperorsCupIconUrl = "{{ url_for('static', filename='emperors_cup.svg') }}";
     const preMatchOverlay = document.getElementById("pre-match-overlay");
     const overlayError = document.getElementById("overlay-error");
     const fitWrestlerNames = window.createPairedNameFitter([
@@ -115,6 +119,7 @@
           preMatchOverlay.style.borderStyle = borderWidth > 0 ? "solid" : "none";
           preMatchOverlay.style.borderColor = borderColor;
         }
+        syncWrestlerHonorsHeights();
       }
     }
 
@@ -358,6 +363,61 @@
       container.replaceChildren(...lines);
     }
 
+    function syncWrestlerHonorsHeights() {
+      if (!prematchV2) return;
+      const containers = [
+        document.getElementById("east-honors"),
+        document.getElementById("west-honors"),
+      ];
+      containers.forEach(container => {
+        container.style.minHeight = "";
+      });
+      const tallest = Math.max(
+        ...containers.map(container => container.getBoundingClientRect().height)
+      );
+      containers.forEach(container => {
+        container.style.minHeight = `${Math.ceil(tallest)}px`;
+      });
+    }
+
+    function renderWrestlerHonors(side, profile) {
+      const container = document.getElementById(`${side}-honors`);
+      if (!prematchV2) {
+        container.replaceChildren();
+        container.hidden = true;
+        return;
+      }
+      const content = profile || {};
+      const honors = [
+        { key: "titles", label: "title", icon: emperorsCupIconUrl, value: content.titles },
+        { key: "kinboshi", label: "kinboshi", icon: kinboshiIconUrl, value: content.kinboshi },
+      ].filter(honor => Number.isInteger(honor.value) && honor.value > 0);
+      const icons = honors.flatMap(honor =>
+        Array.from({ length: honor.value }, () => {
+          const icon = document.createElement("img");
+          icon.className = "wrestler-honor-icon";
+          icon.src = honor.icon;
+          icon.alt = "";
+          icon.setAttribute("aria-hidden", "true");
+          return icon;
+        })
+      );
+      container.replaceChildren(...icons);
+      container.hidden = false;
+      if (honors.length === 0) {
+        container.removeAttribute("aria-label");
+        container.removeAttribute("title");
+        container.setAttribute("aria-hidden", "true");
+        return;
+      }
+      const labels = honors.map(honor =>
+        `${honor.value} ${honor.label}${honor.value === 1 ? "" : "s"}`
+      );
+      container.removeAttribute("aria-hidden");
+      container.setAttribute("aria-label", `Career honors: ${labels.join(", ")}`);
+      container.title = labels.join(", ");
+    }
+
     function renderBout(state, suppressAutoShow = false) {
       if (!state.settings || !state.settings.overlay) return;
       updateOverlaySize(state);
@@ -417,6 +477,8 @@
       };
       renderWrestlerProfile("east", eastProfile, state, comparisons);
       renderWrestlerProfile("west", westProfile, state, comparisons);
+      renderWrestlerHonors("east", eastProfile);
+      renderWrestlerHonors("west", westProfile);
 
       const h2h = state.headToHead;
       const h2hScore = document.getElementById("head-to-head-score");
@@ -442,6 +504,7 @@
       if (hideTimer !== null) window.clearTimeout(hideTimer);
       hideTimer = null;
       preMatchOverlay.hidden = false;
+      syncWrestlerHonorsHeights();
       fitWrestlerNames(
         state.settings.overlay[prematchV2 ? "prematchv2" : "prematch"].font_sizes.text
       );
