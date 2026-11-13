@@ -31,6 +31,10 @@ RANK_ORDER = {
         )
     )
 }
+# Division numbers count down from the top division: 1 = Makuuchi, 6 = Jonokuchi.
+DIVISION_NAMES = {
+    index: name for index, name in enumerate(reversed(DIVISION_ORDER), start=1)
+}
 LookupValue = TypeVar("LookupValue")
 
 

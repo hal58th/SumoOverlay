@@ -157,11 +157,11 @@
       <h2>Pre-match display duration</h2>
       <label class="pre-match-duration" for="pre-match-salaried-seconds">
         Salaried divisions (Makuuchi/Juryo), seconds (0 = off)
-        <input id="pre-match-salaried-seconds" type="number" min="0" step="1" value="10">
+        <input id="pre-match-salaried-seconds" type="number" min="0" step="1" value="{{ settings.control.pre_match_salaried_seconds }}">
       </label>
       <label class="pre-match-duration" for="pre-match-unsalaried-seconds">
         Unsalaried divisions (Makushita and lower), seconds (0 = off)
-        <input id="pre-match-unsalaried-seconds" type="number" min="0" step="1" value="10">
+        <input id="pre-match-unsalaried-seconds" type="number" min="0" step="1" value="{{ settings.control.pre_match_unsalaried_seconds }}">
       </label>
       <div class="pre-match-actions">
         <button id="pre-match-pin" type="button">Permanent Pre-Match On</button>
