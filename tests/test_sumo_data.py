@@ -193,6 +193,92 @@ def test_schedule_caches_history_and_refreshes_only_selected_day():
     assert client.calls == [1, 2, 2]
 
 
+def test_edit_distance_is_zero_for_identical_strings():
+    from sumo_data import _edit_distance
+    assert _edit_distance("", "") == 0
+    assert _edit_distance("abc", "abc") == 0
+    assert _edit_distance("大喜翔", "大喜翔") == 0
+
+
+def test_edit_distance_counts_single_character_differences():
+    from sumo_data import _edit_distance
+    assert _edit_distance("abc", "abd") == 1  # substitution
+    assert _edit_distance("abc", "ab") == 1  # deletion
+    assert _edit_distance("ab", "abc") == 1  # insertion
+    assert _edit_distance("", "a") == 1
+    assert _edit_distance("a", "") == 1
+
+
+def test_edit_distance_is_larger_for_more_differences():
+    from sumo_data import _edit_distance
+    assert _edit_distance("abc", "xyz") == 3  # all different
+    assert _edit_distance("abcd", "abxy") == 2
+
+
+def test_fuzzy_matching_finds_near_miss_ocr_readings():
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            names = {1: "大喜翔", 2: "栃幸大"}
+            english = {1: "East 1", 2: "West 2"}
+            return {"shikonaJp": names[rikishi_id], "shikonaEn": english[rikishi_id]}
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+
+    # Exact match works as before
+    assert schedule.find_bout_index_by_kanji("大喜翔", "栃幸大") == 0
+
+    # Near-miss: OCR misreads one character (翔 -> 向, which looks similar)
+    # This should still match via fuzzy matching when readings are provided
+    readings = (("大喜向", 0.85), ("栃幸大", 0.95))
+    assert schedule.find_bout_index_by_kanji(
+        "大喜向", "栃幸大", ocr_readings=(readings, [("栃幸大", 0.95)])
+    ) == 0
+
+
+def test_fuzzy_matching_does_not_match_when_distance_too_large():
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            names = {1: "大喜翔", 2: "栃幸大"}
+            english = {1: "East 1", 2: "West 2"}
+            return {"shikonaJp": names[rikishi_id], "shikonaEn": english[rikishi_id]}
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+
+    # Two character difference should not match
+    readings = (("大喜商", 0.85), ("藤幸大", 0.95))
+    # "大喜商" is distance 1 from "大喜翔" (should match)
+    # "藤幸大" is distance 2 from "栃幸大" (should NOT match)
+    # But the first name matches, so the bout should still be found
+    assert schedule.find_bout_index_by_kanji(
+        "大喜商", "藤幸大", ocr_readings=(readings, [("藤幸大", 0.95)])
+    ) == 0
+
+
+def test_fuzzy_matching_returns_none_when_no_readings_match():
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(1, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            names = {1: "大喜翔", 2: "栃幸大"}
+            english = {1: "East 1", 2: "West 2"}
+            return {"shikonaJp": names[rikishi_id], "shikonaEn": english[rikishi_id]}
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+
+    # Completely wrong names with no close match
+    readings = (("unknown", 0.85), ("alsounknown", 0.95))
+    assert schedule.find_bout_index_by_kanji(
+        "unknown", "alsounknown", ocr_readings=(readings, [("alsounknown", 0.95)])
+    ) is None
+
+
 def test_schedule_matches_ocr_names_to_the_unique_bout_in_either_orientation():
     class FakeClient:
         def fetch_torikumi(self, basho_id, division, day):
