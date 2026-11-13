@@ -1,5 +1,6 @@
 import logging
 import sys
+from threading import Thread
 from types import SimpleNamespace
 
 import pytest
@@ -91,9 +92,18 @@ def test_scanner_accepts_either_name_when_only_one_side_meets_confidence(
     monkeypatch.setattr(
         scanner,
         "_capture_and_read",
-        lambda current_settings: detections,
+        # _run expects (left, right, left_readings, right_readings).
+        lambda current_settings: (*detections, [detections[0]], [detections[1]]),
     )
-    scanner._run()
+
+    # _run loops until the stop event is set, so a mismatch must fail the test
+    # instead of blocking the suite forever.
+    runner = Thread(target=scanner._run, name="test-ocr-run", daemon=True)
+    runner.start()
+    runner.join(timeout=5)
+    if runner.is_alive():
+        scanner.stop()
+    assert not runner.is_alive(), "scanner._run did not stop after a matched bout"
 
     assert emitted == [expected]
     assert scanner.status()["state"] == "matched"
