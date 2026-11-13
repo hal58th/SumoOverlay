@@ -1734,7 +1734,9 @@ def test_python_main_initializes_missing_default_config(monkeypatch, tmp_path):
 
 def test_ocr_match_selects_bout_and_broadcasts_overlay_updates(tmp_path):
     class OCRSchedule(FakeSchedule):
-        def find_bout_index_by_kanji(self, left_name, right_name):
+        def find_bout_index_by_kanji(
+            self, left_name, right_name, ocr_readings=None
+        ):
             if (left_name, right_name) in (
                 ("大喜翔", "栃幸大"),
                 ("栃幸大", "大喜翔"),
@@ -1769,7 +1771,9 @@ def test_ocr_match_selects_bout_and_broadcasts_overlay_updates(tmp_path):
 
 def test_ocr_match_selects_bout_when_only_one_name_is_recognized(tmp_path):
     class OCRSchedule(FakeSchedule):
-        def find_bout_index_by_kanji(self, left_name, right_name):
+        def find_bout_index_by_kanji(
+            self, left_name, right_name, ocr_readings=None
+        ):
             return 1 if (left_name, right_name) == ("大喜翔", "") else None
 
     settings = default_settings()
@@ -1790,7 +1794,9 @@ def test_ocr_match_selects_bout_when_only_one_name_is_recognized(tmp_path):
 
 def test_ocr_retriggers_pre_match_for_the_already_selected_bout(tmp_path):
     class OCRSchedule(FakeSchedule):
-        def find_bout_index_by_kanji(self, left_name, right_name):
+        def find_bout_index_by_kanji(
+            self, left_name, right_name, ocr_readings=None
+        ):
             return 0 if (left_name, right_name) == ("大喜翔", "栃幸大") else None
 
     settings = default_settings()

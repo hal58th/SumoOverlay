@@ -34,6 +34,34 @@ RANK_ORDER = {
 LookupValue = TypeVar("LookupValue")
 
 
+def _edit_distance(a: str, b: str) -> int:
+    """Compute the Levenshtein edit distance between two strings."""
+    if a == b:
+        return 0
+    len_a, len_b = len(a), len(b)
+    if len_a == 0:
+        return len_b
+    if len_b == 0:
+        return len_a
+
+    # Use a single-row approach for memory efficiency with short strings
+    previous = list(range(len_b + 1))
+    current = [0] * (len_b + 1)
+
+    for i in range(1, len_a + 1):
+        current[0] = i
+        for j in range(1, len_b + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            current[j] = min(
+                previous[j] + 1,  # deletion
+                current[j - 1] + 1,  # insertion
+                previous[j - 1] + cost,  # substitution
+            )
+        previous, current = current, previous
+
+    return previous[len_b]
+
+
 class SumoApiError(RuntimeError):
     """Raised when the sumo-api.com response cannot safely be used."""
 
@@ -740,8 +768,15 @@ class BashoSchedule:
             "history": history,
         }
 
-    def find_bout_index_by_kanji(self, left_name: str, right_name: str) -> int | None:
-        """Resolve one or both OCR-read Japanese names to one scheduled bout."""
+    def find_bout_index_by_kanji(
+        self, left_name: str, right_name: str, ocr_readings: tuple[list[tuple[str, float]], list[tuple[str, float]]] | None = None
+    ) -> int | None:
+        """Resolve one or both OCR-read Japanese names to one scheduled bout.
+
+        If ocr_readings is provided, also tries near-miss fuzzy matching
+        using edit distance for names that are close to but not exactly in
+        the lookup table. This helps when OCR misreads a single kanji.
+        """
         self._load_kanji_lookups()
         lookup = self._kanji_id_lookup or {}
         detected_ids: set[int] = set()
@@ -750,6 +785,12 @@ class BashoSchedule:
                 rikishi_id = lookup.get(name) or lookup.get("".join(name.split()))
                 if rikishi_id is not None:
                     detected_ids.add(rikishi_id)
+
+        if not detected_ids and ocr_readings is not None:
+            detected_ids = self._fuzzy_match_names(
+                ocr_readings, lookup
+            )
+
         if not detected_ids:
             return None
 
@@ -759,3 +800,28 @@ class BashoSchedule:
             if detected_ids & {bout.east.rikishi_id, bout.west.rikishi_id}
         ]
         return matches[0] if len(matches) == 1 else None
+
+    @staticmethod
+    def _fuzzy_match_names(
+        ocr_readings: tuple[list[tuple[str, float]], list[tuple[str, float]]],
+        lookup: dict[str, int],
+        max_distance: int = 1,
+    ) -> set[int]:
+        """Try fuzzy matching for OCR readings that didn't match exactly.
+
+        For each OCR reading (sorted by confidence), if the exact text isn't
+        in the lookup, try all lookup keys within edit distance `max_distance`.
+        Returns the set of matched rikishi IDs.
+        """
+        detected_ids: set[int] = set()
+        for readings in ocr_readings:
+            for text, _confidence in readings:
+                if not text:
+                    continue
+                if text in lookup or "".join(text.split()) in lookup:
+                    continue
+                for lookup_text, rikishi_id in lookup.items():
+                    if _edit_distance(text, lookup_text) <= max_distance:
+                        detected_ids.add(rikishi_id)
+                        break
+        return detected_ids
