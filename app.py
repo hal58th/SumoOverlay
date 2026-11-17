@@ -18,7 +18,6 @@ from jinja2 import ChoiceLoader, FileSystemLoader
 
 from bout_state import BoutController
 from config import (
-    DIVISION_NAMES,
     SettingsError,
     SettingsWatcher,
     initialize_config_file,
@@ -26,7 +25,7 @@ from config import (
     validate_settings,
 )
 from ocr_scanner import OCRScanner
-from sumo_data import BashoSchedule, SumoApiClient, SumoApiError
+from sumo_data import BashoSchedule, SumoApiClient, SumoApiError, DIVISION_NAMES
 
 
 def _application_directory() -> Path:
@@ -285,7 +284,7 @@ def create_app(
 
     @app.get("/control")
     def control() -> str:
-        return render_template("control.html")
+        return render_template("control.html", settings=current_settings())
 
     @app.get("/calibrate")
     def calibrate() -> str:

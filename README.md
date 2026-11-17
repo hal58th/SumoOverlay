@@ -31,17 +31,18 @@ The base app uses CPU-only Python packages. OCR is optional and requires EasyOCR
 
 ## Control page and addresses
 
-With the app running, open:
+With the app running, open one of these addresses (default port 5000, default host `127.0.0.1`):
 
-- Control page: <http://127.0.0.1:5000/control>
-- Scoreboard overlay: <http://127.0.0.1:5000/scoreboard>
-- Pre-match overlay v2: <http://127.0.0.1:5000/prematch/v2>
-- Slim half-width scoreboard: <http://127.0.0.1:5000/scoreboard/slimhalf>
-- Slim full-width scoreboard: <http://127.0.0.1:5000/scoreboard/slimfull>
-- Upcoming matches overlay: <http://127.0.0.1:5000/upcomingmatches>
-- Pre-match overlay: <http://127.0.0.1:5000/prematch>
-- Pre-match overlay v2: <http://127.0.0.1:5000/prematch/v2>
-- OCR calibration tool: <http://127.0.0.1:5000/calibrate>
+| Page | Address | Notes |
+|---|---|---|
+| Control page | `http://127.0.0.1:5000/control` | Bout control and settings; also shows the OCR preview when OCR is enabled and the mode is Automated. |
+| Scoreboard overlay | `http://127.0.0.1:5000/scoreboard` | Main scoreboard overlay; set the OBS Browser Source size to `overlay.scoreboard.width` × `overlay.scoreboard.height`. |
+| Pre-match overlay | `http://127.0.0.1:5000/prematch` | Pre-match H2H card; set the OBS Browser Source size to `overlay.prematch.width` × `overlay.prematch.height`. |
+| Pre-match overlay v2 | `http://127.0.0.1:5000/prematch/v2` | Pre-match H2H card v2; set the OBS Browser Source size to `overlay.prematchv2.width` × `overlay.prematchv2.height`. |
+| Slim half-width scoreboard | `http://127.0.0.1:5000/scoreboard/slimhalf` | Defaults to 960 × 36; shows names, abbreviated ranks, current scores, and division. |
+| Slim full-width scoreboard | `http://127.0.0.1:5000/scoreboard/slimfull` | Defaults to 1920 × 36; shows current scores, head-to-head score (or “First Meeting”), division name, and bout count on the same line. |
+| Upcoming matches overlay | `http://127.0.0.1:5000/upcomingmatches` | Defaults to 1920 × 36; shows up to six scheduled matchups after the selected bout. On the final bout of the day it displays “Musubi-no-ichiban (last match)”. |
+| OCR calibration tool | `http://127.0.0.1:5000/calibrate` | Interactive tool to set OCR capture and name-box coordinates. |
 
 By default, the server is available only on the computer running SumoOverlay.
 To use OCR on the computer displaying the sumo stream while OBS runs on another

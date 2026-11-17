@@ -13,15 +13,9 @@ from typing import Any, Callable
 
 import yaml
 
+from sumo_data import DIVISION_NAMES
 
-DIVISION_NAMES = {
-    1: "Makuuchi",
-    2: "Juryo",
-    3: "Makushita",
-    4: "Sandanme",
-    5: "Jonidan",
-    6: "Jonokuchi",
-}
+
 ALL_DIVISIONS = 0
 DEFAULT_OVERLAY_STYLE = {
     "font_family": '"Segoe UI", Arial, sans-serif',
