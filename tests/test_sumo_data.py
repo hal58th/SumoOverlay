@@ -378,6 +378,8 @@ def test_schedule_returns_cached_broadcast_profile_details():
             "weight": 188,
             "shusshin": "Ishikawa",
             "debut": "202305",
+            "previousRank": "Sekiwake 1 West",
+            "firstBasho": False,
             "highestRank": "Sekiwake 1 West",
             "lifetime": {"wins": 0, "losses": 0, "matches": 0},
             "kinboshi": 0,
@@ -390,6 +392,8 @@ def test_schedule_returns_cached_broadcast_profile_details():
             "weight": 188,
             "shusshin": "Ishikawa",
             "debut": "202305",
+            "previousRank": "Ozeki 1 East",
+            "firstBasho": False,
             "highestRank": "Ozeki 1 East",
             "lifetime": {"wins": 0, "losses": 0, "matches": 0},
             "kinboshi": 0,
@@ -444,6 +448,47 @@ def test_lifetime_records_include_only_completed_matches_before_selected_bout():
 
     assert profiles["east"]["lifetime"] == {"wins": 1, "losses": 1, "matches": 2}
     assert profiles["west"]["lifetime"] == {"wins": 0, "losses": 2, "matches": 2}
+
+
+def test_profiles_show_previous_basho_rank_and_flag_debuts():
+    def career_match(basho_id, day, east_id, east_rank):
+        return {
+            "bashoId": basho_id,
+            "day": day,
+            "matchNo": 1,
+            "eastId": east_id,
+            "eastRank": east_rank,
+            "westId": 100,
+            "westRank": "Maegashira 1 East",
+            "winnerId": None,
+        }
+
+    class FakeClient:
+        def fetch_torikumi(self, basho_id, division, day):
+            return [match(3, 1, 2)]
+
+        def fetch_rikishi(self, rikishi_id):
+            return {"shikonaJp": f"力士{rikishi_id}", "shikonaEn": f"Rikishi{rikishi_id}"}
+
+        def fetch_rikishi_stats(self, rikishi_id):
+            return {"yushoByDivision": {"Makuuchi": 0}}
+
+        def fetch_rikishi_matches(self, rikishi_id):
+            if rikishi_id == 1:
+                return [
+                    career_match("202401", 1, 1, "Maegashira 9 West"),
+                    career_match("202403", 16, 1, "Maegashira 4 East"),
+                    career_match("202505", 1, 1, "Maegashira 2 East"),
+                ]
+            return [career_match("202505", 1, 2, "Maegashira 3 West")]
+
+    schedule = BashoSchedule(FakeClient(), "202505", "Makuuchi", 1)
+    profiles = schedule.wrestler_profiles(schedule.bouts[0])
+
+    assert profiles["east"]["previousRank"] == "Maegashira 4 East"
+    assert profiles["east"]["firstBasho"] is False
+    assert profiles["west"]["previousRank"] is None
+    assert profiles["west"]["firstBasho"] is True
 
 
 def test_profiles_count_kinboshi_and_makuuchi_titles():
