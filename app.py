@@ -204,16 +204,9 @@ def create_app(
         app.extensions["sumo_schedule"] = controller.schedule
         broadcast_state(update_pre_match)
 
-    def handle_ocr_match(
-        left_name: str, right_name: str, left_readings=None, right_readings=None
-    ) -> dict[str, Any] | None:
+    def handle_ocr_match(left_name: str, right_name: str) -> dict[str, Any] | None:
         previous_index = controller.state()["index"]
-        ocr_readings = None
-        if left_readings is not None and right_readings is not None:
-            ocr_readings = (left_readings, right_readings)
-        selected = controller.select_bout_by_kanji(
-            left_name, right_name, ocr_readings=ocr_readings
-        )
+        selected = controller.select_bout_by_kanji(left_name, right_name)
         if selected is None:
             return None
         changed = controller.state()["index"] != previous_index
@@ -447,7 +440,7 @@ def create_app(
         right_img: bytes = b""
         try:
             if last_frame is not None:
-                (left_text, left_conf, left_img), (right_text, right_conf, right_img), _, _ = (
+                (left_text, left_conf, left_img), (right_text, right_conf, right_img) = (
                     ocr_scanner.read_crops_from_frame(
                         last_frame,
                         capture,
@@ -456,7 +449,7 @@ def create_app(
                     )
                 )
             else:
-                (left_text, left_conf), (right_text, right_conf), _, _ = (
+                (left_text, left_conf), (right_text, right_conf) = (
                     ocr_scanner.capture_and_read_with_boxes(
                         monitor_number,
                         capture,
@@ -492,7 +485,7 @@ def create_app(
 
         snap = current_settings()
         try:
-            (left_text, left_conf, left_img), (right_text, right_conf, right_img), _, _ = (
+            (left_text, left_conf, left_img), (right_text, right_conf, right_img) = (
                 ocr_scanner.capture_crops(snap)
             )
         except Exception as error:

@@ -72,24 +72,11 @@ class OCRScanner:
     def normalize_text(text: str) -> str:
         return "".join(text.split())
 
-    def _all_readings(
-        self, readings: list[tuple[str, float]]
-    ) -> list[tuple[str, float]]:
-        """Return all readings sorted by confidence, with normalized text."""
-        normalized = [
-            (self.normalize_text(text), float(confidence))
-            for text, confidence in readings
-        ]
-        normalized.sort(key=lambda r: (-r[1], r[0]))
-        return normalized
-
     def observe(
         self,
         left: str,
         right: str,
         stable_readings: int,
-        left_readings: list[tuple[str, float]] | None = None,
-        right_readings: list[tuple[str, float]] | None = None,
     ) -> dict[str, Any] | None:
         self._reset_detection_if_requested()
         pair = (self.normalize_text(left), self.normalize_text(right))
@@ -104,8 +91,6 @@ class OCRScanner:
                 rightConfidence=None,
                 error=None,
                 matchedBout=None,
-                leftReadings=None,
-                rightReadings=None,
             )
             return None
 
@@ -123,8 +108,6 @@ class OCRScanner:
                 rightConfidence=None,
                 error=None,
                 matchedBout=None,
-                leftReadings=(left_readings if left_readings is not None else [(pair[0], 1.0)]),
-                rightReadings=(right_readings if right_readings is not None else [(pair[1], 1.0)]),
             )
             return None
         if pair == self._last_emitted:
@@ -138,11 +121,9 @@ class OCRScanner:
             leftConfidence=None,
             rightConfidence=None,
             error=None,
-            leftReadings=(left_readings if left_readings is not None else [(pair[0], 1.0)]),
-            rightReadings=(right_readings if right_readings is not None else [(pair[1], 1.0)]),
         )
         try:
-            state = self.on_match(*pair, left_readings, right_readings)
+            state = self.on_match(*pair)
         except Exception as error:
             self.logger.exception("OCR match lookup failed")
             self._set_status(
@@ -160,8 +141,6 @@ class OCRScanner:
                     f"OCR read {pair[0] or 'unread'} vs {pair[1] or 'unread'}, "
                     "but could not identify one matching scheduled bout."
                 ),
-                leftReadings=(left_readings if left_readings is not None else [(pair[0], 1.0)]),
-                rightReadings=(right_readings if right_readings is not None else [(pair[1], 1.0)]),
             )
             return None
         matched_bout = {
@@ -208,7 +187,7 @@ class OCRScanner:
         capture_region: dict[str, int],
         name_boxes: dict[str, dict[str, int]],
         frame_is_full_monitor: bool = True,
-    ) -> tuple[tuple[str, float, bytes], tuple[str, float, bytes], list[tuple[str, float]], list[tuple[str, float]]]:
+    ) -> tuple[tuple[str, float, bytes], tuple[str, float, bytes]]:
         """Run OCR on explicit name box coordinates from an existing image frame."""
         try:
             import mss.tools
@@ -240,29 +219,27 @@ class OCRScanner:
                 png_bytes = b""
             detected.append((text, conf, png_bytes or b""))
 
-        return detected[0], detected[1], all_readings[0], all_readings[1]
+        return detected[0], detected[1]
 
     def capture_and_read_with_boxes(
         self,
         monitor_number: int,
         capture_region: dict[str, int],
         name_boxes: dict[str, dict[str, int]],
-    ) -> tuple[tuple[str, float], tuple[str, float], list[tuple[str, float]], list[tuple[str, float]]]:
+    ) -> tuple[tuple[str, float], tuple[str, float]]:
         """Capture and OCR using explicit coordinates instead of reading from settings."""
         frame = self._capture_frame(monitor_number, capture_region)
 
-        left, right, left_readings, right_readings = self.read_crops_from_frame(
+        left, right = self.read_crops_from_frame(
             frame, capture_region, name_boxes, frame_is_full_monitor=False
         )
-        return (left[0], left[1]), (right[0], right[1]), left_readings, right_readings
+        return (left[0], left[1]), (right[0], right[1])
 
     def capture_crops(
         self, settings: dict[str, Any]
     ) -> tuple[
         tuple[str, float, bytes],
         tuple[str, float, bytes],
-        list[tuple[str, float]],
-        list[tuple[str, float]],
     ]:
         """Capture the two name box crops and return (text, confidence, png_bytes) each."""
         ocr_settings = settings["ocr"]
@@ -275,11 +252,11 @@ class OCRScanner:
             (*self._best_reading(readings), self._encode_png(crop))
             for crop, readings in zip(crops, all_readings)
         ]
-        return detected[0], detected[1], all_readings[0], all_readings[1]
+        return detected[0], detected[1]
 
     def _capture_and_read(
         self, settings: dict[str, Any]
-    ) -> tuple[tuple[str, float], tuple[str, float], list[tuple[str, float]], list[tuple[str, float]]]:
+    ) -> tuple[tuple[str, float], tuple[str, float]]:
         ocr_settings = settings["ocr"]
         frame = self._capture_frame(
             monitor_number=ocr_settings["monitor"],
@@ -287,7 +264,7 @@ class OCRScanner:
         )
         _, all_readings = self._read_name_boxes(frame, ocr_settings["name_boxes"])
         detected = [self._best_reading(readings) for readings in all_readings]
-        return detected[0], detected[1], all_readings[0], all_readings[1]
+        return detected[0], detected[1]
 
     def _capture_frame(
         self, monitor_number: int, capture_region: dict[str, int]
@@ -409,7 +386,7 @@ class OCRScanner:
                     self._stop.wait(min(1, ocr_settings["interval_seconds"]))
                     continue
 
-                left, right, left_readings, right_readings = self._capture_and_read(settings)
+                left, right = self._capture_and_read(settings)
                 if (
                     left[1] < ocr_settings["minimum_confidence"]
                     and right[1] < ocr_settings["minimum_confidence"]
@@ -430,8 +407,6 @@ class OCRScanner:
                             f"{right[0] or 'unread'} ({right[1]:.0%}); "
                             "both names were below the confidence threshold."
                         ),
-                        leftReadings=left_readings,
-                        rightReadings=right_readings,
                     )
                 else:
                     left_name = (
@@ -448,8 +423,6 @@ class OCRScanner:
                         left_name,
                         right_name,
                         ocr_settings["stable_readings"],
-                        left_readings=left_readings,
-                        right_readings=right_readings,
                     )
                 self._stop.wait(ocr_settings["interval_seconds"])
             except Exception as error:
