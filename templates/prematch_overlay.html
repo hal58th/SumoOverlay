@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ "Sumo Pre-Match Overlay v2" if prematch_v2|default(false) else "Sumo Pre-Match Overlay" }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=18) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='overlay.css', v=19) }}">
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="{{ url_for('static', filename='name-fitting.js', v=5) }}"></script>
 </head>
@@ -46,6 +46,10 @@
     const prematchV2 = {{ prematch_v2|default(false)|tojson }};
     const kinboshiIconUrl = "{{ url_for('static', filename='kinboshi.svg') }}";
     const emperorsCupIconUrl = "{{ url_for('static', filename='emperors_cup.svg') }}";
+    const h2hEastIconUrl = "{{ url_for('static', filename='h2h_east.svg') }}";
+    const h2hWestIconUrl = "{{ url_for('static', filename='h2h_west.svg') }}";
+    const rankUpIconUrl = "{{ url_for('static', filename='rank_up.svg') }}";
+    const rankDownIconUrl = "{{ url_for('static', filename='rank_down.svg') }}";
     const preMatchOverlay = document.getElementById("pre-match-overlay");
     const overlayError = document.getElementById("overlay-error");
     const fitWrestlerNames = window.createPairedNameFitter([
@@ -197,6 +201,51 @@
       };
     }
 
+    function parseRank(rank) {
+      if (typeof rank !== "string") return null;
+      const match =
+        /^(Mae-?zumo|Jonokuchi|Jonidan|Sandanme|Makushita|Juryo|Maegashira|Komusubi|Sekiwake|Ozeki|Yokozuna)(?:\s+(\d+))?(?:\s+(East|West))?$/i.exec(
+          rank.trim()
+        );
+      if (!match) return null;
+      const order = {
+        "mae-zumo": 0,
+        "maezumo": 0,
+        "jonokuchi": 1,
+        "jonidan": 2,
+        "sandanme": 3,
+        "makushita": 4,
+        "juryo": 5,
+        "maegashira": 6,
+        "komusubi": 7,
+        "sekiwake": 8,
+        "ozeki": 9,
+        "yokozuna": 10
+      };
+      const titleOrder = order[match[1].toLowerCase()];
+      if (titleOrder === undefined) return null;
+      const number = match[2] ? parseInt(match[2], 10) : 1;
+      const side = match[3] ? match[3].toLowerCase() : null;
+      const sideOrder = side === "east" ? 2 : (side === "west" ? 1 : 0);
+      return { titleOrder, number, sideOrder, side };
+    }
+
+    function compareRanks(currentRank, previousRank) {
+      const current = parseRank(currentRank);
+      const previous = parseRank(previousRank);
+      if (!current || !previous) return 0;
+      if (current.titleOrder !== previous.titleOrder) {
+        return current.titleOrder > previous.titleOrder ? 1 : -1;
+      }
+      if (current.number !== previous.number) {
+        return current.number < previous.number ? 1 : -1;
+      }
+      if (current.side && previous.side && current.sideOrder !== previous.sideOrder) {
+        return current.sideOrder > previous.sideOrder ? 1 : -1;
+      }
+      return 0;
+    }
+
     function rankComparisonKey(rank) {
       if (typeof rank !== "string") return null;
       const match =
@@ -242,7 +291,7 @@
       const content = profile || {};
       const container = document.getElementById(`${side}-profile`);
       const lines = [];
-      const line = (label, value, emphasized = false) => {
+      const line = (label, value, emphasized = false, extraNode = null) => {
         const line = document.createElement("div");
         line.className = "wrestler-profile-line";
         line.append(document.createTextNode(`${label}: `));
@@ -251,6 +300,9 @@
           : document.createElement("span");
         valueNode.textContent = value;
         line.append(valueNode);
+        if (extraNode) {
+          line.append(document.createTextNode(" "), extraNode);
+        }
         lines.push(line);
       };
       const age = ageFromBirthDate(content.birthDate);
@@ -296,9 +348,16 @@
           careerAgeLine.append(valueNode);
         };
         if (wrestlingMonths !== null) {
+          let careerText;
+          if (wrestlingMonths < 12) {
+            careerText = `${wrestlingMonths} ${wrestlingMonths === 1 ? "month" : "months"}`;
+          } else {
+            const years = Math.floor(wrestlingMonths / 12);
+            careerText = `${years} ${years === 1 ? "year" : "years"}`;
+          }
           appendCareerAge(
             "Career",
-            `${Math.floor(wrestlingMonths / 12)} years`,
+            careerText,
             comparisons.tenure[side]
           );
         }
@@ -323,7 +382,25 @@
         }
       }
       if (prematchV2 && (content.previousRank || content.firstBasho)) {
-        line("Previous rank", content.previousRank || "First Basho");
+        const currentRank = state[side] && state[side].rank;
+        const rankChange = content.previousRank ? compareRanks(currentRank, content.previousRank) : 0;
+        let rankArrow = null;
+        if (rankChange > 0) {
+          rankArrow = document.createElement("img");
+          rankArrow.className = "rank-arrow up";
+          rankArrow.src = rankUpIconUrl;
+          rankArrow.alt = "Rank went up";
+          rankArrow.title = "Rank went up since last basho";
+          rankArrow.setAttribute("aria-hidden", "true");
+        } else if (rankChange < 0) {
+          rankArrow = document.createElement("img");
+          rankArrow.className = "rank-arrow down";
+          rankArrow.src = rankDownIconUrl;
+          rankArrow.alt = "Rank went down";
+          rankArrow.title = "Rank went down since last basho";
+          rankArrow.setAttribute("aria-hidden", "true");
+        }
+        line("Previous rank", content.previousRank || "First Basho", false, rankArrow);
       }
       if (content.highestRank) {
         const currentRank = state[side] && state[side].rank;
@@ -495,9 +572,10 @@
       if (h2h && Array.isArray(h2h.history)) {
         h2h.history.forEach((winner, index) => {
           if (winner !== "east" && winner !== "west") return;
-          const marker = document.createElement("span");
+          const marker = document.createElement("img");
           marker.className = `head-to-head-result ${winner}`;
-          marker.textContent = winner === "east" ? "←" : "→";
+          marker.src = winner === "east" ? h2hEastIconUrl : h2hWestIconUrl;
+          marker.alt = winner === "east" ? "Left wrestler won" : "Right wrestler won";
           marker.title = winner === "east" ? "Left wrestler won" : "Right wrestler won";
           marker.setAttribute("aria-label", `Bout ${index + 1}: ${marker.title}`);
           h2hHistory.appendChild(marker);

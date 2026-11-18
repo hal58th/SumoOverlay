@@ -421,6 +421,22 @@ def test_pages_and_kanji_lookup_are_available():
     assert kinboshi_svg.status_code == 200
     assert "<circle" not in kinboshi_svg.text
     assert client.get("/static/emperors_cup.svg").status_code == 200
+    assert client.get("/static/h2h_east.svg").status_code == 200
+    assert client.get("/static/h2h_west.svg").status_code == 200
+    assert client.get("/static/rank_up.svg").status_code == 200
+    assert client.get("/static/rank_down.svg").status_code == 200
+    assert ".rank-arrow" in all_styles
+    assert 'const h2hEastIconUrl = "/static/h2h_east.svg";' in prematch_v2_overlay.text
+    assert 'const h2hWestIconUrl = "/static/h2h_west.svg";' in prematch_v2_overlay.text
+    assert 'const rankUpIconUrl = "/static/rank_up.svg";' in prematch_v2_overlay.text
+    assert 'const rankDownIconUrl = "/static/rank_down.svg";' in prematch_v2_overlay.text
+    assert 'wrestlingMonths < 12' in prematch_v2_overlay.text
+    assert '${wrestlingMonths} ${wrestlingMonths === 1 ? "month" : "months"}' in prematch_v2_overlay.text
+    assert '${years} ${years === 1 ? "year" : "years"}' in prematch_v2_overlay.text
+    assert 'compareRanks(currentRank, content.previousRank)' in prematch_v2_overlay.text
+    assert 'rankArrow.className = "rank-arrow up";' in prematch_v2_overlay.text
+    assert 'rankArrow.className = "rank-arrow down";' in prematch_v2_overlay.text
+    assert 'marker.src = winner === "east" ? h2hEastIconUrl : h2hWestIconUrl;' in prematch_v2_overlay.text
     assert "font-size: calc(var(--overlay-muted-font-size) + 4px);" in all_styles
     assert ".prematch-v2 .rank-record > :last-child" in all_styles
     assert "font-size: calc(var(--overlay-current-score-font-size) + 4px);" in all_styles
@@ -568,7 +584,7 @@ def test_pages_and_kanji_lookup_are_available():
     assert 'id="bouts-until-next-stage"' not in pre_match_html
     assert "Bout ${state.divisionBoutNumber} out of ${state.divisionTotal}" in pre_match_html
     assert "state.boutsUntilNextStage" not in pre_match_html
-    assert 'line("Previous rank", content.previousRank || "First Basho")' in pre_match_html
+    assert 'line("Previous rank", content.previousRank || "First Basho", false, rankArrow)' in pre_match_html
     assert '"First Basho"' in pre_match_html
     assert pre_match_html.index('content.previousRank') < pre_match_html.index(
         '"Highest rank"'
@@ -638,6 +654,41 @@ def test_bold_pre_match_records_do_not_change_score_row_height():
     assert "font-size: inherit;" in emphasized_record_styles
     assert "line-height: inherit;" in emphasized_record_styles
     assert "font-size: 1.12em;" not in emphasized_record_styles
+
+
+def test_prematch_v2_career_tenure_previous_rank_arrow_and_h2h_icons():
+    root = Path(__file__).resolve().parents[1]
+    prematch_html = (root / "templates" / "prematch_overlay.html").read_text(encoding="utf-8")
+    all_styles = (root / "static" / "overlay.css").read_text(encoding="utf-8")
+
+    # SVG files
+    for svg_name in ("rank_up.svg", "rank_down.svg", "h2h_east.svg", "h2h_west.svg"):
+        svg_content = (root / "static" / svg_name).read_text(encoding="utf-8")
+        assert "<svg" in svg_content
+        assert "</svg>" in svg_content
+        assert "viewBox=" in svg_content
+
+    # CSS styles
+    assert ".rank-arrow {" in all_styles
+    assert ".head-to-head-result {" in all_styles
+
+    # Career tenure months and singular year handling in JS
+    assert 'wrestlingMonths < 12' in prematch_html
+    assert '${wrestlingMonths} ${wrestlingMonths === 1 ? "month" : "months"}' in prematch_html
+    assert '${years} ${years === 1 ? "year" : "years"}' in prematch_html
+
+    # Previous rank arrow comparison and rendering
+    assert "function parseRank(" in prematch_html
+    assert "function compareRanks(" in prematch_html
+    assert "rankArrow.className = \"rank-arrow up\";" in prematch_html
+    assert "rankArrow.className = \"rank-arrow down\";" in prematch_html
+    assert "rankArrow.src = rankUpIconUrl;" in prematch_html
+    assert "rankArrow.src = rankDownIconUrl;" in prematch_html
+
+    # Head to head image rendering replaces plain text arrows
+    assert 'marker.src = winner === "east" ? h2hEastIconUrl : h2hWestIconUrl;' in prematch_html
+    assert 'marker.textContent = winner === "east" ? "←" : "→";' not in prematch_html
+
 
 
 def test_announced_winner_record_counts_are_red_in_all_overlay_templates():
@@ -1241,7 +1292,13 @@ def test_scoreboard_and_prematch_font_size_defaults_and_overrides():
         "current_score": 38,
         "result": 60,
     }
-    assert settings["overlay"]["prematchv2"] == settings["overlay"]["prematch"]
+    assert settings["overlay"]["prematchv2"]["height"] == 860
+    assert settings["overlay"]["prematch"]["height"] == 800
+    assert {
+        k: v for k, v in settings["overlay"]["prematchv2"].items() if k != "height"
+    } == {
+        k: v for k, v in settings["overlay"]["prematch"].items() if k != "height"
+    }
     assert settings["overlay"]["prematchv2"] is not settings["overlay"]["prematch"]
     assert (
         settings["overlay"]["prematchv2"]["font_sizes"]
