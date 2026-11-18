@@ -12,7 +12,7 @@ def test_scanner_requires_stable_reads_and_emits_a_match_once(caplog):
     emitted = []
     scanner = OCRScanner(
         lambda: {},
-        lambda left, right, *_args: emitted.append((left, right))
+        lambda left, right: emitted.append((left, right))
         or {"index": 3, "division": "Makuuchi", "matchNo": 4},
         logging.getLogger("test-ocr"),
     )
@@ -34,7 +34,7 @@ def test_scanner_can_detect_the_same_names_after_a_detection_reset():
     emitted = []
     scanner = OCRScanner(
         lambda: {},
-        lambda left, right, *_args: emitted.append((left, right)) or {"index": 0},
+        lambda left, right: emitted.append((left, right)) or {"index": 0},
         logging.getLogger("test-ocr"),
     )
 
@@ -49,7 +49,7 @@ def test_scanner_resets_stability_when_names_change_or_disappear():
     emitted = []
     scanner = OCRScanner(
         lambda: {},
-        lambda left, right, *_args: emitted.append((left, right)) or {"index": 1},
+        lambda left, right: emitted.append((left, right)) or {"index": 1},
         logging.getLogger("test-ocr"),
     )
 
@@ -83,7 +83,7 @@ def test_scanner_accepts_either_name_when_only_one_side_meets_confidence(
         },
     }
 
-    def on_match(left, right, *_args):
+    def on_match(left, right):
         emitted.append((left, right))
         scanner._stop.set()
         return {"index": 4}
@@ -92,8 +92,7 @@ def test_scanner_accepts_either_name_when_only_one_side_meets_confidence(
     monkeypatch.setattr(
         scanner,
         "_capture_and_read",
-        # _run expects (left, right, left_readings, right_readings).
-        lambda current_settings: (*detections, [detections[0]], [detections[1]]),
+        lambda current_settings: detections,
     )
 
     # _run loops until the stop event is set, so a mismatch must fail the test
@@ -112,7 +111,7 @@ def test_scanner_accepts_either_name_when_only_one_side_meets_confidence(
 
 def test_scanner_reports_unmatched_names_and_callback_errors(caplog):
     logger = logging.getLogger("test-ocr-errors")
-    unmatched = OCRScanner(lambda: {}, lambda left, right, *_args: None, logger)
+    unmatched = OCRScanner(lambda: {}, lambda left, right: None, logger)
 
     unmatched.observe("大喜翔", "栃幸大", stable_readings=1)
     assert unmatched.status()["state"] == "unmatched"
@@ -121,7 +120,7 @@ def test_scanner_reports_unmatched_names_and_callback_errors(caplog):
     unmatched.observe("", "", stable_readings=1)
     assert unmatched.status()["lastAction"] == last_action
 
-    def fail_lookup(left, right, *_args):
+    def fail_lookup(left, right):
         raise RuntimeError("lookup failed")
 
     failed = OCRScanner(lambda: {}, fail_lookup, logger)
