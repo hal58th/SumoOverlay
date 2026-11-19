@@ -170,7 +170,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         },
         "prematchv2": {
             "width": 1656,
-            "height": 800,
+            "height": 860,
             "opacity": 0.95,
             "text_opacity": 1,
             "font_sizes": copy.deepcopy(DEFAULT_PREMATCH_FONT_SIZES),

@@ -475,6 +475,14 @@ body {
   -webkit-line-clamp: 2;
 }
 
+.rank-arrow {
+  display: inline-block;
+  width: 0.95em;
+  height: 0.95em;
+  vertical-align: -0.05em;
+  margin-left: 4px;
+}
+
 .prematch-v2 .rank {
   font-size: calc(var(--overlay-muted-font-size) + 4px);
 }
@@ -541,26 +549,11 @@ body {
 }
 
 .head-to-head-result {
-  display: inline-grid;
+  display: inline-block;
   width: 42px;
   height: 42px;
-  place-items: center;
-  border-radius: 50%;
-  color: color-mix(
-    in srgb,
-    var(--overlay-text-color) calc(var(--prematch-text-opacity, 1) * 100%),
-    transparent
-  );
-  font-size: var(--prematch-history-font-size);
-  line-height: 1;
-}
-
-.head-to-head-result.east {
-  background: #258b43;
-}
-
-.head-to-head-result.west {
-  background: #7139ad;
+  object-fit: contain;
+  vertical-align: middle;
 }
 
 .overlay-error {
